@@ -1,26 +1,24 @@
+#include <image.h>
+
 #include <iostream>
 #include <string>
 
-#define STB_IMAGE_IMPLEMENTATION
 #include "../stb/stb_image.h"
-
-#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../stb/stb_image_write.h"
-
-#include "../include/filters.h"
+#include "filters.h"
 
 std::string get_extension(const std::string &file) {
   size_t p = file.rfind('.');
-  if (p == std::string::npos || p == file.size() - 1)
-    return "";
+  if (p == std::string::npos || p == file.size() - 1) return "";
   return file.substr(p + 1);
 }
 
 int main() {
   int width, height, channels;
 
-  auto image_path = "/home/lagan/projects/parallel_image_processor/images/"
-                    "input/landscape.jpg";
+  auto image_path =
+      "/home/lagan/projects/parallel_image_processor/images/"
+      "input/landscape.jpg";
   auto img = stbi_load(image_path, &width, &height, &channels, 0);
 
   auto ext = get_extension(image_path);
@@ -45,9 +43,10 @@ int main() {
 
   int status = 0;
   if (ext == "jpg") {
-    status = stbi_write_jpg("/home/lagan/projects/parallel_image_processor/"
-                            "images/output/landscape.jpg",
-                            width, height, channels, img, 100);
+    status = stbi_write_jpg(
+        "/home/lagan/projects/parallel_image_processor/"
+        "images/output/landscape.jpg",
+        width, height, channels, img, 100);
   }
 
   if (!status) {

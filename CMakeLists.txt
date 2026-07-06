@@ -20,7 +20,7 @@ set(SOURCES
     src/image.cpp
 )
 
-add_library(filters_lib src/filters.cpp)
+add_library(filters_lib src/filters.cpp src/image.cpp)
 target_include_directories(filters_lib PUBLIC include)
 
 add_executable(engine ${SOURCES})

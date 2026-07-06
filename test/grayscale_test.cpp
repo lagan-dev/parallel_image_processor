@@ -1,14 +1,15 @@
+#include <filters.h>
+#include <gtest/gtest.h>
+#include <image.h>
+
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
 #include <random>
 #include <utility>
 #include <vector>
-
-#include <filters.h>
-#include <gtest/gtest.h>
-#include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
 
 namespace {
 
@@ -21,18 +22,11 @@ std::vector<uint8_t> ReferenceGrayscale(const std::vector<uint8_t> &input,
   cv::cvtColor(src, gray,
                channels == 4 ? cv::COLOR_RGBA2GRAY : cv::COLOR_RGB2GRAY);
 
-  std::vector<uint8_t> output(width * height * channels);
+  std::vector<uint8_t> output(width * height);
 
   for (int row = 0; row < height; ++row) {
     for (int col = 0; col < width; ++col) {
-      const int srcIndex = (row * width + col) * channels;
-      const int grayValue = static_cast<int>(gray.at<uchar>(row, col));
-      output[srcIndex + 0] = static_cast<uint8_t>(grayValue);
-      output[srcIndex + 1] = static_cast<uint8_t>(grayValue);
-      output[srcIndex + 2] = static_cast<uint8_t>(grayValue);
-      if (channels == 4) {
-        output[srcIndex + 3] = src.at<cv::Vec4b>(row, col)[3];
-      }
+      output[row * width + col] = gray.at<uchar>(row, col);
     }
   }
 
@@ -49,6 +43,18 @@ std::vector<uint8_t> GenerateRandomImage(int width, int height, int channels,
   }
 
   return image;
+}
+
+void CopyToImage(Image &image, const std::vector<uint8_t> &input) {
+  ASSERT_EQ(static_cast<int>(input.size()),
+            image.getWidth() * image.getHeight() * image.getChannels());
+  std::memcpy(image.getDataMutable(), input.data(), input.size());
+}
+
+std::vector<uint8_t> ReadImageBytes(const Image &image) {
+  return std::vector<uint8_t>(
+      image.getData(), image.getData() + image.getWidth() * image.getHeight() *
+                                             image.getChannels());
 }
 
 void CompareToOpenCv(const std::vector<uint8_t> &output,
@@ -70,31 +76,41 @@ void CompareToOpenCv(const std::vector<uint8_t> &output,
   EXPECT_EQ(errors, 0);
 }
 
-} // namespace
+}  // namespace
 
 TEST(GrayscaleTest, MatchesOpenCvGrayscaleReference) {
   std::vector<uint8_t> image = {
-      255, 0,   0,   // red
-      0,   255, 0,   // green
-      0,   0,   255, // blue
-      64,  128, 192  // mixed
+      255, 0,   0,    // red
+      0,   255, 0,    // green
+      0,   0,   255,  // blue
+      64,  128, 192   // mixed
   };
 
-  std::vector<uint8_t> output = image;
-  grayscale(output.data(), 2, 2, 3);
+  Image src(2, 2, 3);
+  CopyToImage(src, image);
+
+  Image dst(2, 2, 1);
+  grayscale(dst, src);
+
   const std::vector<uint8_t> reference = ReferenceGrayscale(image, 2, 2, 3);
+  const std::vector<uint8_t> output = ReadImageBytes(dst);
 
   CompareToOpenCv(output, reference);
 }
 
-TEST(GrayscaleTest, PreservesAlphaWhenChannelsIsFour) {
+TEST(GrayscaleTest, ProducesSingleChannelOutputForRgbaInput) {
   std::vector<uint8_t> image = {
       10, 20, 30, 40, 50, 60, 70, 80,
   };
 
-  std::vector<uint8_t> output = image;
-  grayscale(output.data(), 2, 1, 4);
+  Image src(2, 1, 4);
+  CopyToImage(src, image);
+
+  Image dst(2, 1, 1);
+  grayscale(dst, src);
+
   const std::vector<uint8_t> reference = ReferenceGrayscale(image, 2, 1, 4);
+  const std::vector<uint8_t> output = ReadImageBytes(dst);
 
   CompareToOpenCv(output, reference);
 }
@@ -114,11 +130,16 @@ TEST(GrayscaleTest, MatchesOpenCvGrayscaleReferenceWithRandomShapes) {
 
     std::vector<uint8_t> image =
         GenerateRandomImage(width, height, channels, rng);
-    std::vector<uint8_t> output = image;
 
-    grayscale(output.data(), width, height, channels);
+    Image src(width, height, channels);
+    CopyToImage(src, image);
+
+    Image dst(width, height, 1);
+    grayscale(dst, src);
+
     const std::vector<uint8_t> reference =
         ReferenceGrayscale(image, width, height, channels);
+    const std::vector<uint8_t> output = ReadImageBytes(dst);
 
     CompareToOpenCv(output, reference);
   }

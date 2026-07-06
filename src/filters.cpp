@@ -22,27 +22,29 @@ std::ostream &operator<<(std::ostream &os, const std::vector<T> &vec) {
   return os;
 }
 
-void grayscale(unsigned char *data, const int width, const int height,
-               const int channels) {
+void grayscale(Image &dst, const Image &src) {
   // Grayscale = (0.299 × R) + (0.587 × G) + (0.114 × B)
 
-  for (int x = 0; x < height; x++) {
-    for (int y = 0; y < width; y++) {
-      int index = (x * width + y) * channels;
+  auto height = src.getHeight();
+  auto width = src.getWidth();
+  auto channels = src.getChannels();
+  auto input_data = src.getData();
 
-      // Get RGB values
-      unsigned char r = data[index];
-      unsigned char g = data[index + 1];
-      unsigned char b = data[index + 2];
+  auto out_data = dst.getDataMutable();
 
-      // Calc grayscale values
-      unsigned char gray = (0.299 * r) + (0.587 * g) + (0.114 * b);
+  for (int idx = 0; idx < width * height; idx++) {
+    auto px = input_data + (idx * channels);
 
-      // Update RGB values
-      data[index] = gray;
-      data[index + 1] = gray;
-      data[index + 2] = gray;
-    }
+    // Get RGB values
+    unsigned char r = px[0];
+    unsigned char g = px[1];
+    unsigned char b = px[2];
+
+    // Calc grayscale values
+    unsigned char gray = (0.299 * r) + (0.587 * g) + (0.114 * b);
+
+    // Store output values
+    out_data[idx] = gray;
   }
 }
 
@@ -88,8 +90,7 @@ int get_bounded_index(int h, int w, int height, int width, int channels,
                       BorderMode mode) {
   auto get_reflect_idx = [](int k, int n, BorderMode mode) {
     int delta = (mode == BORDER_REFLECT);
-    if (n == 1)
-      return 0;
+    if (n == 1) return 0;
 
     while (k < 0 || k >= n) {
       if (k < 0) {
@@ -103,35 +104,33 @@ int get_bounded_index(int h, int w, int height, int width, int channels,
   };
 
   switch (mode) {
-  case BORDER_CLAMP: {
-    h = std::clamp(h, 0, height - 1);
-    w = std::clamp(w, 0, width - 1);
+    case BORDER_CLAMP: {
+      h = std::clamp(h, 0, height - 1);
+      w = std::clamp(w, 0, width - 1);
 
-    break;
-  }
+      break;
+    }
 
-  case BORDER_WRAP: {
-    h = h % height;
-    if (h < 0)
-      h += height;
+    case BORDER_WRAP: {
+      h = h % height;
+      if (h < 0) h += height;
 
-    w = w % width;
-    if (w < 0)
-      w += width;
+      w = w % width;
+      if (w < 0) w += width;
 
-    break;
-  }
+      break;
+    }
 
-  case BORDER_REFLECT:
-  case BORDER_MIRROR: {
-    h = get_reflect_idx(h, height, mode);
-    w = get_reflect_idx(w, width, mode);
+    case BORDER_REFLECT:
+    case BORDER_MIRROR: {
+      h = get_reflect_idx(h, height, mode);
+      w = get_reflect_idx(w, width, mode);
 
-    break;
-  }
+      break;
+    }
 
-  default:
-    std::cout << "BorderMode not supported!!" << std::endl;
+    default:
+      std::cout << "BorderMode not supported!!" << std::endl;
   }
 
   return (h * width + w) * channels;
