@@ -10,13 +10,15 @@
 
 class Image {
  public:
+  Image();
   Image(int width, int height, int channels);
+  Image(int width, int height, int channels, uint8_t* data);
 
   ~Image();
 
   bool load(const std::string &path);
 
-  bool save(const std::string &path, const int quality);
+  bool save(const std::string &path, const int quality = 100);
 
   void free();
 
@@ -32,11 +34,11 @@ class Image {
   uint8_t *getDataMutable() { return data; }
 
  private:
-  int width;
-  int height;
-  int channels;
-  uint8_t *data;
-  std::string extension;
+  int width = 0;
+  int height = 0;
+  int channels = 0;
+  uint8_t *data = nullptr;
+  std::string extension = "";
 };
 
 #endif  // IMAGE_H

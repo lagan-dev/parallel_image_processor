@@ -18,9 +18,9 @@ template <typename T>
 std::ostream &operator<<(std::ostream &os, const std::vector<T> &vec);
 
 void grayscale(Image &dst, const Image &src);
-void gaussian_blur(unsigned char *data, const int width, const int height,
-                   const int channels, int kernel_size, float sigmaX,
-                   float sigmaY = 0.0, BorderMode mode = BORDER_REFLECT,
+void gaussian_blur(Image &output, const Image &input, int kernel_size,
+                   float sigmaX, float sigmaY = 0.0,
+                   BorderMode mode = BORDER_REFLECT,
                    const double *borderValue = nullptr);
 
 #endif

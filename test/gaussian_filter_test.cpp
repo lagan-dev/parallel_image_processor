@@ -1,14 +1,14 @@
-#include <cstddef>
+#include <filters.h>
 #include <gtest/gtest.h>
-#include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
+#include <image.h>
 
 #include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <filters.h>
 #include <iomanip>
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
 #include <random>
 #include <stdexcept>
 #include <vector>
@@ -31,13 +31,26 @@ cv::BorderTypes ToCvBorderType(BorderMode mode) {
   throw std::invalid_argument("Unknown BorderMode");
 }
 
+void CopyToImage(Image &image, const std::vector<uint8_t> &input) {
+  ASSERT_EQ(static_cast<int>(input.size()),
+            image.getWidth() * image.getHeight() * image.getChannels());
+  std::memcpy(image.getDataMutable(), input.data(), input.size());
+}
+
+std::vector<uint8_t> ReadImageBytes(const Image &image) {
+  return std::vector<uint8_t>(
+      image.getData(), image.getData() + image.getWidth() * image.getHeight() *
+                                             image.getChannels());
+}
+
 std::vector<uint8_t> RunFilter(const std::vector<uint8_t> &input, int width,
                                int height, int channels, int kernel_size,
                                float sigmaX, float sigmaY) {
-  std::vector<uint8_t> output = input;
-  gaussian_blur(output.data(), width, height, channels, kernel_size, sigmaX,
-                sigmaY, BORDER_CLAMP);
-  return output;
+  Image src(width, height, channels);
+  CopyToImage(src, input);
+  Image dst(width, height, channels);
+  gaussian_blur(dst, src, kernel_size, sigmaX, sigmaY, BORDER_CLAMP);
+  return ReadImageBytes(dst);
 }
 
 std::vector<uint8_t> RunOpenCvBlur(const std::vector<uint8_t> &input, int width,
@@ -66,11 +79,6 @@ void FillRandomImage(std::vector<uint8_t> &image, int width, int height,
   for (uint8_t &value : image) {
     value = static_cast<uint8_t>(dist(rng));
   }
-  // for(int i = 0; i < width * height; i++) {
-  //   image[i * channels + 0] = static_cast<uint8_t>(1);
-  //   image[i * channels + 1] = static_cast<uint8_t>(2);
-  //   image[i * channels + 2] = static_cast<uint8_t>(3);
-  // }
 }
 
 std::vector<uint8_t> GenerateRandomImage(int width, int height, int channels,
@@ -162,15 +170,15 @@ TEST(GaussianBlurTest, MatchesOpenCvGaussianBlurWithRandomShapes) {
 
 namespace {
 
-// Parameterized versions that accept dynamic kernel/sigma
 std::vector<uint8_t> RunFilterWithParams(const std::vector<uint8_t> &input,
                                          int width, int height, int channels,
                                          int kernel_size, float sigmaX,
                                          float sigmaY, BorderMode mode) {
-  std::vector<uint8_t> output = input;
-  gaussian_blur(output.data(), width, height, channels, kernel_size, sigmaX,
-                sigmaY, mode);
-  return output;
+  Image src(width, height, channels);
+  CopyToImage(src, input);
+  Image dst(width, height, channels);
+  gaussian_blur(dst, src, kernel_size, sigmaX, sigmaY, mode);
+  return ReadImageBytes(dst);
 }
 
 std::vector<uint8_t> RunOpenCvBlurWithParams(const std::vector<uint8_t> &input,
@@ -198,7 +206,7 @@ std::vector<uint8_t> RunOpenCvBlurWithParams(const std::vector<uint8_t> &input,
     cv::Mat blurred;
     cv::GaussianBlur(padded, blurred, cv::Size(kernel_size, kernel_size),
                      sigmaX, sigmaY,
-                     cv::BORDER_CONSTANT); // border never reached
+                     cv::BORDER_CONSTANT);
 
     dst = blurred(cv::Rect(radius, radius, width, height)).clone();
   }
@@ -264,14 +272,10 @@ TEST(GaussianBlurTest, MatchesOpenCvGaussianBlurWithRandomParams) {
 
   std::mt19937 rng(42u);
 
-  // Width/height: 1–128
   std::uniform_int_distribution<int> dim_dist(1, 200);
 
-  // Kernel size: pick a random odd number in [3, 11]
-  // Generate an index 0–4, then map to {3, 5, 7, 9, 11}
   std::uniform_int_distribution<int> kernel_idx_dist(0, 4);
 
-  // Sigma: 0.5–3.0
   std::uniform_real_distribution<float> sigma_x_dist(0.5f, 3.0f);
   std::uniform_real_distribution<float> sigma_y_dist(0.5f, 3.0f);
 
@@ -283,7 +287,7 @@ TEST(GaussianBlurTest, MatchesOpenCvGaussianBlurWithRandomParams) {
     for (int trial = 0; trial < kNumTrials; ++trial) {
       const int width = dim_dist(rng);
       const int height = dim_dist(rng);
-      const int kernel_size = 3 + kernel_idx_dist(rng) * 2; // {3,5,7,9,11}
+      const int kernel_size = 3 + kernel_idx_dist(rng) * 2;
       const float sigmaX = sigma_x_dist(rng);
       const float sigmaY = sigma_y_dist(rng);
 

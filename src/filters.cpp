@@ -90,7 +90,8 @@ int get_bounded_index(int h, int w, int height, int width, int channels,
                       BorderMode mode) {
   auto get_reflect_idx = [](int k, int n, BorderMode mode) {
     int delta = (mode == BORDER_REFLECT);
-    if (n == 1) return 0;
+    if (n == 1)
+      return 0;
 
     while (k < 0 || k >= n) {
       if (k < 0) {
@@ -104,40 +105,42 @@ int get_bounded_index(int h, int w, int height, int width, int channels,
   };
 
   switch (mode) {
-    case BORDER_CLAMP: {
-      h = std::clamp(h, 0, height - 1);
-      w = std::clamp(w, 0, width - 1);
+  case BORDER_CLAMP: {
+    h = std::clamp(h, 0, height - 1);
+    w = std::clamp(w, 0, width - 1);
 
-      break;
-    }
+    break;
+  }
 
-    case BORDER_WRAP: {
-      h = h % height;
-      if (h < 0) h += height;
+  case BORDER_WRAP: {
+    h = h % height;
+    if (h < 0)
+      h += height;
 
-      w = w % width;
-      if (w < 0) w += width;
+    w = w % width;
+    if (w < 0)
+      w += width;
 
-      break;
-    }
+    break;
+  }
 
-    case BORDER_REFLECT:
-    case BORDER_MIRROR: {
-      h = get_reflect_idx(h, height, mode);
-      w = get_reflect_idx(w, width, mode);
+  case BORDER_REFLECT:
+  case BORDER_MIRROR: {
+    h = get_reflect_idx(h, height, mode);
+    w = get_reflect_idx(w, width, mode);
 
-      break;
-    }
+    break;
+  }
 
-    default:
-      std::cout << "BorderMode not supported!!" << std::endl;
+  default:
+    std::cout << "BorderMode not supported!!" << std::endl;
   }
 
   return (h * width + w) * channels;
 }
 
 template <typename T>
-void sample_pixel(std::vector<T> &px, T *data, int h, int w, int height,
+void sample_pixel(std::vector<T> &px, const T *data, int h, int w, int height,
                   int width, int channels, BorderMode mode,
                   const double *borderValue = nullptr) {
   if (mode == BORDER_CONSTANT) {
@@ -161,15 +164,21 @@ void sample_pixel(std::vector<T> &px, T *data, int h, int w, int height,
   }
 }
 
-void gaussian_blur(unsigned char *data, const int width, const int height,
-                   const int channels, int kernel_size, float sigmaX,
-                   float sigmaY, BorderMode mode, const double *borderValue) {
+void gaussian_blur(Image &output, const Image &input, int kernel_size,
+                   float sigmaX, float sigmaY, BorderMode mode,
+                   const double *borderValue) {
   if (sigmaY == 0.0) {
     sigmaY = sigmaX;
   }
 
   auto kernelX = get_1d_gaussian_kernel(kernel_size, sigmaX);
   int n = kernelX.size() / 2;
+
+  auto height = input.getHeight();
+  auto width = input.getWidth();
+  auto channels = input.getChannels();
+  auto input_data_ptr = input.getData();
+  auto output_data_ptr = output.getDataMutable();
 
   // Allocate a temporary buffer to store intermediate results
   std::vector<double> temp_buffer(height * width * channels);
@@ -182,8 +191,8 @@ void gaussian_blur(unsigned char *data, const int width, const int height,
 
       for (int k = -n; k <= n; k++) {
         std::vector<uint8_t> px(channels, 0);
-        sample_pixel(px, data, row, col + k, height, width, channels, mode,
-                     borderValue);
+        sample_pixel(px, input_data_ptr, row, col + k, height, width, channels,
+                     mode, borderValue);
 
         auto kernel_val = kernelX[k + n];
         for (int c = 0; c < channels; c++) {
@@ -220,7 +229,7 @@ void gaussian_blur(unsigned char *data, const int width, const int height,
 
       // store in output buffer
       for (int c = 0; c < channels; c++) {
-        data[index + c] =
+        output_data_ptr[index + c] =
             static_cast<uint8_t>(std::clamp(std::lround(sum[c]), 0L, 255L));
       }
     }
