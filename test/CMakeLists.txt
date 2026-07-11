@@ -9,3 +9,8 @@ add_executable(grayscale_tests grayscale_test.cpp)
 target_include_directories(grayscale_tests PRIVATE ../include)
 target_link_libraries(grayscale_tests PRIVATE filters_lib GTest::gtest_main ${OpenCV_LIBS})
 add_test(NAME grayscale_tests COMMAND grayscale_tests)
+
+add_executable(sobel_filter_tests sobel_filter_test.cpp)
+target_include_directories(sobel_filter_tests PRIVATE ../include)
+target_link_libraries(sobel_filter_tests PRIVATE filters_lib GTest::gtest_main ${OpenCV_LIBS})
+add_test(NAME sobel_filter_tests COMMAND sobel_filter_tests)

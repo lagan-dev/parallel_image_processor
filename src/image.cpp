@@ -15,7 +15,7 @@ Image::Image() {}
 Image::Image(int width_, int height_, int channels_)
     : width(width_), height(height_), channels(channels_) {
   size_t size = static_cast<size_t>(width_) * height_ * channels_;
-  data = static_cast<uint8_t *>(std::malloc(size));
+  data = static_cast<uint8_t *>(std::calloc(size, sizeof(uint8_t)));
   if (!data) {
     throw std::bad_alloc();
   }
@@ -27,6 +27,9 @@ Image::Image(int width_, int height_, int channels_, uint8_t *data_)
 Image::~Image() { std::free(data); }
 
 bool Image::load(const std::string &path) {
+  std::free(data);
+  data = nullptr;
+
   data = stbi_load(path.c_str(), &width, &height, &channels, 0);
   if (!data) {
     std::cerr << "stbi_load failed: " << stbi_failure_reason() << "\n";
@@ -47,7 +50,7 @@ bool Image::save(const std::string &path, const int quality) {
     extension = out_extension;
   }
 
-  if (out_extension == "jpg") {
+  if (out_extension == "jpg" || out_extension == "jpeg") {
     status = stbi_write_jpg(filename, width, height, channels, data, quality);
   } else if (out_extension == "png") {
     status = stbi_write_png(filename, width, height, channels, data,

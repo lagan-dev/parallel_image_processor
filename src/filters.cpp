@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
+#include <stdexcept>
 #include <vector>
 
 template <typename T>
@@ -140,8 +141,8 @@ int get_bounded_index(int h, int w, int height, int width, int channels,
 }
 
 template <typename T>
-void sample_pixel(std::vector<T> &px, const T *data, int h, int w, int height,
-                  int width, int channels, BorderMode mode,
+void sample_pixel(std::vector<double> &px, const T *data, int h, int w,
+                  int height, int width, int channels, BorderMode mode,
                   const double *borderValue = nullptr) {
   if (mode == BORDER_CONSTANT) {
     if ((h >= 0 && h < height) && (w >= 0 && w < width)) {
@@ -183,14 +184,16 @@ void gaussian_blur(Image &output, const Image &input, int kernel_size,
   // Allocate a temporary buffer to store intermediate results
   std::vector<double> temp_buffer(height * width * channels);
 
+  std::vector<double> sum(channels, 0.0);
+  std::vector<double> px(channels, 0.0);
+
   // horizontal pass
   for (int row = 0; row < height; row++) {
     for (int col = 0; col < width; col++) {
       int index = (row * width + col) * channels;
-      std::vector<double> sum(channels, 0.0);
 
+      std::fill(sum.begin(), sum.end(), 0.0);
       for (int k = -n; k <= n; k++) {
-        std::vector<uint8_t> px(channels, 0);
         sample_pixel(px, input_data_ptr, row, col + k, height, width, channels,
                      mode, borderValue);
 
@@ -214,10 +217,9 @@ void gaussian_blur(Image &output, const Image &input, int kernel_size,
   for (int row = 0; row < height; row++) {
     for (int col = 0; col < width; col++) {
       int index = (row * width + col) * channels;
-      std::vector<double> sum(channels, 0.0);
 
+      std::fill(sum.begin(), sum.end(), 0.0);
       for (int k = -n; k <= n; k++) {
-        std::vector<double> px(channels, 0);
         sample_pixel(px, temp_buffer.data(), row + k, col, height, width,
                      channels, mode, borderValue);
 
@@ -235,3 +237,154 @@ void gaussian_blur(Image &output, const Image &input, int kernel_size,
     }
   }
 }
+
+// ========= HELPER FUNCTIONS FOR SOBEL OPERATOR [START] ==========
+
+// Helper function to calculate Binomial Coefficients: nCr
+// Returns long long to avoid overflow during intermediate computation.
+long long binomialCoefficient(int n, int r) {
+  if (r < 0 || r > n)
+    return 0;
+  if (r == 0 || r == n)
+    return 1;
+  if (r > n / 2)
+    r = n - r; // Symmetry property
+
+  long long res = 1;
+  for (int i = 1; i <= r; ++i) {
+    res = res * (n - i + 1) / i;
+  }
+  return res;
+}
+
+// Generates 1D Binomial Smoothing Vector of size N
+// Uses long long to match binomialCoefficient's return type and avoid
+// silent truncation/overflow for larger N.
+std::vector<long long> generateSmoothingVector(int N) {
+  std::vector<long long> S(N);
+  for (int k = 0; k < N; ++k) {
+    S[k] = binomialCoefficient(N - 1, k);
+  }
+  return S;
+}
+
+// Generates 1D Antisymmetric Differentiation Vector of size N
+// Sign convention fixed to match standard Sobel: D[0] is positive,
+// D[N-1] is negative (e.g. N=3 -> {-1, 0, 1} is what you get when this
+// is used as [-1,0,1]; here we produce {1,0,-1}... see note below).
+std::vector<long long> generateDifferentiationVector(int N) {
+  if (N < 3) {
+    throw std::invalid_argument("Differentiation vector requires N >= 3");
+  }
+
+  // Binomial row of size N-1 (i.e., S_{N-1}), sized exactly to what's filled.
+  std::vector<long long> prev_binomial(N - 1);
+  for (int k = 0; k < N - 1; ++k) {
+    prev_binomial[k] = binomialCoefficient(N - 2, k);
+  }
+
+  std::vector<long long> D(N, 0);
+  for (int k = 0; k < N; ++k) {
+    long long left = (k > 0) ? prev_binomial[k - 1] : 0;
+    long long right = (k < N - 1) ? prev_binomial[k] : 0;
+    // Sign convention: left - right, so that D[0] > 0 and D[N-1] < 0,
+    // matching the standard Sobel {-1, 0, 1} orientation for N=3.
+    D[k] = left - right;
+  }
+  return D;
+}
+
+struct SobelKernels {
+  std::vector<long long> kernelX;
+  std::vector<long long> kernelY;
+};
+
+SobelKernels generateSobelKernels(int dx, int dy, int kernel_size) {
+  if (dx == 0 && dy == 0) {
+    throw std::invalid_argument("Both dx and dy can not be equal to 0");
+  }
+
+  auto S = generateSmoothingVector(kernel_size);
+  auto D = generateDifferentiationVector(kernel_size);
+
+  SobelKernels kernels;
+
+  kernels.kernelX = (dx == 1) ? D : S;
+  kernels.kernelY = (dy == 1) ? D : S;
+
+  return kernels;
+}
+
+// ========= HELPER FUNCTIONS FOR SOBEL OPERATOR [END] ==========
+
+template <typename TYPE>
+void sobel(std::vector<TYPE> &output, const Image &input, int dx, int dy, int kernel_size,
+           double scale, double delta, BorderMode mode,
+           const double *borderValue) {
+  auto height = input.getHeight();
+  auto width = input.getWidth();
+  auto channels = input.getChannels();
+  auto input_data_ptr = input.getData();
+
+  // Allocate a temporary buffer to store intermediate results
+  std::vector<double> temp_buffer(height * width * channels);
+
+  auto kernels = generateSobelKernels(dx, dy, kernel_size);
+  int n = kernels.kernelX.size() / 2;
+
+  std::vector<double> sum(channels, 0.0);
+  std::vector<double> px(channels, 0.0);
+
+  // horizontal pass
+  for (int row = 0; row < height; row++) {
+    for (int col = 0; col < width; col++) {
+      int index = (row * width + col) * channels;
+
+      std::fill(sum.begin(), sum.end(), 0.0);
+      for (int k = -n; k <= n; k++) {
+        sample_pixel(px, input_data_ptr, row, col + k, height, width, channels,
+                     mode, borderValue);
+
+        auto kernel_val = kernels.kernelX[k + n];
+        for (int c = 0; c < channels; c++) {
+          sum[c] += (px[c] * kernel_val);
+        }
+      }
+
+      // store in temp buffer
+      for (int c = 0; c < channels; c++) {
+        temp_buffer[index + c] = sum[c];
+      }
+    }
+  }
+
+  n = kernels.kernelY.size() / 2;
+
+  // vertical pass
+  for (int row = 0; row < height; row++) {
+    for (int col = 0; col < width; col++) {
+      int index = (row * width + col) * channels;
+
+      std::fill(sum.begin(), sum.end(), 0.0);
+      for (int k = -n; k <= n; k++) {
+        sample_pixel(px, temp_buffer.data(), row + k, col, height, width,
+                     channels, mode, borderValue);
+
+        auto kernel_val = kernels.kernelY[k + n];
+        for (int c = 0; c < channels; c++) {
+          sum[c] += (px[c] * kernel_val);
+        }
+      }
+
+      // store in output buffer
+      for (int c = 0; c < channels; c++) {
+        output[index + c] = sum[c] * scale + delta;
+      }
+    }
+  }
+}
+
+template void sobel<double>(std::vector<double> &output, const Image &input,
+                            int dx, int dy, int kernel_size, double scale,
+                            double delta, BorderMode mode,
+                            const double *borderValue);
