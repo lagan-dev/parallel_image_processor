@@ -5,6 +5,5 @@ AllowShortFunctionsOnASingleLine: Empty
 DerivePointerAlignment: false
 PointerAlignment: Left
 IndentCaseLabels: false
-BreakBeforeBraces: Allman
 ReflowComments: false
 SortIncludes: false

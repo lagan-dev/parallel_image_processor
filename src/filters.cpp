@@ -9,7 +9,7 @@
 #include <vector>
 
 template <typename T>
-std::ostream &operator<<(std::ostream &os, const std::vector<T> &vec) {
+std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec) {
   os << "[";
 
   for (std::size_t i = 0; i < vec.size(); i++) {
@@ -23,7 +23,7 @@ std::ostream &operator<<(std::ostream &os, const std::vector<T> &vec) {
   return os;
 }
 
-void grayscale(Image &dst, const Image &src) {
+void grayscale(Image& dst, const Image& src) {
   // Grayscale = (0.299 × R) + (0.587 × G) + (0.114 × B)
 
   auto height = src.getHeight();
@@ -79,7 +79,7 @@ std::vector<double> get_1d_gaussian_kernel(int kernel_size, double sigma) {
 
   // Normalize
   if (sum > 0.0) {
-    for (auto &val : kernel) {
+    for (auto& val : kernel) {
       val = (val / sum);
     }
   }
@@ -91,8 +91,7 @@ int get_bounded_index(int h, int w, int height, int width, int channels,
                       BorderMode mode) {
   auto get_reflect_idx = [](int k, int n, BorderMode mode) {
     int delta = (mode == BORDER_REFLECT);
-    if (n == 1)
-      return 0;
+    if (n == 1) return 0;
 
     while (k < 0 || k >= n) {
       if (k < 0) {
@@ -115,12 +114,10 @@ int get_bounded_index(int h, int w, int height, int width, int channels,
 
   case BORDER_WRAP: {
     h = h % height;
-    if (h < 0)
-      h += height;
+    if (h < 0) h += height;
 
     w = w % width;
-    if (w < 0)
-      w += width;
+    if (w < 0) w += width;
 
     break;
   }
@@ -141,9 +138,9 @@ int get_bounded_index(int h, int w, int height, int width, int channels,
 }
 
 template <typename T>
-void sample_pixel(std::vector<double> &px, const T *data, int h, int w,
+void sample_pixel(std::vector<double>& px, const T* data, int h, int w,
                   int height, int width, int channels, BorderMode mode,
-                  const double *borderValue = nullptr) {
+                  const double* borderValue = nullptr) {
   if (mode == BORDER_CONSTANT) {
     if ((h >= 0 && h < height) && (w >= 0 && w < width)) {
       int idx = (h * width + w) * channels;
@@ -165,9 +162,9 @@ void sample_pixel(std::vector<double> &px, const T *data, int h, int w,
   }
 }
 
-void gaussian_blur(Image &output, const Image &input, int kernel_size,
+void gaussian_blur(Image& output, const Image& input, int kernel_size,
                    float sigmaX, float sigmaY, BorderMode mode,
-                   const double *borderValue) {
+                   const double* borderValue) {
   if (sigmaY == 0.0) {
     sigmaY = sigmaX;
   }
@@ -243,12 +240,9 @@ void gaussian_blur(Image &output, const Image &input, int kernel_size,
 // Helper function to calculate Binomial Coefficients: nCr
 // Returns long long to avoid overflow during intermediate computation.
 long long binomialCoefficient(int n, int r) {
-  if (r < 0 || r > n)
-    return 0;
-  if (r == 0 || r == n)
-    return 1;
-  if (r > n / 2)
-    r = n - r; // Symmetry property
+  if (r < 0 || r > n) return 0;
+  if (r == 0 || r == n) return 1;
+  if (r > n / 2) r = n - r;  // Symmetry property
 
   long long res = 1;
   for (int i = 1; i <= r; ++i) {
@@ -318,9 +312,9 @@ SobelKernels generateSobelKernels(int dx, int dy, int kernel_size) {
 // ========= HELPER FUNCTIONS FOR SOBEL OPERATOR [END] ==========
 
 template <typename TYPE>
-void sobel(std::vector<TYPE> &output, const Image &input, int dx, int dy, int kernel_size,
-           double scale, double delta, BorderMode mode,
-           const double *borderValue) {
+void sobel(std::vector<TYPE>& output, const Image& input, int dx, int dy,
+           int kernel_size, double scale, double delta, BorderMode mode,
+           const double* borderValue) {
   auto height = input.getHeight();
   auto width = input.getWidth();
   auto channels = input.getChannels();
@@ -384,7 +378,7 @@ void sobel(std::vector<TYPE> &output, const Image &input, int dx, int dy, int ke
   }
 }
 
-template void sobel<double>(std::vector<double> &output, const Image &input,
+template void sobel<double>(std::vector<double>& output, const Image& input,
                             int dx, int dy, int kernel_size, double scale,
                             double delta, BorderMode mode,
-                            const double *borderValue);
+                            const double* borderValue);

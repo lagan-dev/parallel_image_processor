@@ -11,16 +11,16 @@
 #include "../stb/stb_image_write.h"
 #include "filters.h"
 
-std::string get_extension(const std::string &file) {
+std::string get_extension(const std::string& file) {
   size_t p = file.rfind('.');
-  if (p == std::string::npos || p == file.size() - 1)
-    return "";
+  if (p == std::string::npos || p == file.size() - 1) return "";
   return file.substr(p + 1);
 }
 
 int main() {
-  auto image_path = "/home/lagan/projects/2906/parallel_image_processor/images/"
-                    "input/landscape.jpg";
+  auto image_path =
+      "/home/lagan/projects/2906/parallel_image_processor/images/"
+      "input/landscape.jpg";
   Image in_img;
 
   auto status = in_img.load(image_path);
@@ -76,8 +76,9 @@ int main() {
                 grayscaled_img.getChannels());
   std::memcpy(out_img.getDataMutable(), out_temp.data(), out_temp.size());
 
-  auto output_path = "/home/lagan/projects/2906/parallel_image_processor/"
-                     "images/output/landscape.jpg";
+  auto output_path =
+      "/home/lagan/projects/2906/parallel_image_processor/"
+      "images/output/landscape.jpg";
 
   status = out_img.save(output_path);
 

@@ -13,10 +13,10 @@
 
 namespace {
 
-std::vector<uint8_t> ReferenceGrayscale(const std::vector<uint8_t> &input,
+std::vector<uint8_t> ReferenceGrayscale(const std::vector<uint8_t>& input,
                                         int width, int height, int channels) {
   cv::Mat src(height, width, channels == 4 ? CV_8UC4 : CV_8UC3,
-              const_cast<uint8_t *>(input.data()));
+              const_cast<uint8_t*>(input.data()));
 
   cv::Mat gray;
   cv::cvtColor(src, gray,
@@ -34,31 +34,31 @@ std::vector<uint8_t> ReferenceGrayscale(const std::vector<uint8_t> &input,
 }
 
 std::vector<uint8_t> GenerateRandomImage(int width, int height, int channels,
-                                         std::mt19937 &rng) {
+                                         std::mt19937& rng) {
   std::vector<uint8_t> image(width * height * channels);
   std::uniform_int_distribution<int> dist(0, 255);
 
-  for (uint8_t &value : image) {
+  for (uint8_t& value : image) {
     value = static_cast<uint8_t>(dist(rng));
   }
 
   return image;
 }
 
-void CopyToImage(Image &image, const std::vector<uint8_t> &input) {
+void CopyToImage(Image& image, const std::vector<uint8_t>& input) {
   ASSERT_EQ(static_cast<int>(input.size()),
             image.getWidth() * image.getHeight() * image.getChannels());
   std::memcpy(image.getDataMutable(), input.data(), input.size());
 }
 
-std::vector<uint8_t> ReadImageBytes(const Image &image) {
+std::vector<uint8_t> ReadImageBytes(const Image& image) {
   return std::vector<uint8_t>(
       image.getData(), image.getData() + image.getWidth() * image.getHeight() *
                                              image.getChannels());
 }
 
-void CompareToOpenCv(const std::vector<uint8_t> &output,
-                     const std::vector<uint8_t> &reference) {
+void CompareToOpenCv(const std::vector<uint8_t>& output,
+                     const std::vector<uint8_t>& reference) {
   ASSERT_EQ(output.size(), reference.size());
 
   size_t errors = 0;
@@ -124,7 +124,7 @@ TEST(GrayscaleTest, MatchesOpenCvGrayscaleReferenceWithRandomShapes) {
       std::make_pair(32, 32), std::make_pair(63, 45), std::make_pair(128, 77),
   };
 
-  for (const auto &shape : shapes) {
+  for (const auto& shape : shapes) {
     const int width = shape.first;
     const int height = shape.second;
 
