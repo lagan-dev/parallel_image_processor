@@ -14,6 +14,18 @@ enum BorderMode {
   BORDER_CONSTANT
 };
 
+enum class Axis { Horizontal, Vertical };
+
+struct GaussianKernels {
+  std::vector<double> kernelX;
+  std::vector<double> kernelY;
+};
+
+struct SobelKernels {
+  std::vector<long long> kernelX;
+  std::vector<long long> kernelY;
+};
+
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec);
 

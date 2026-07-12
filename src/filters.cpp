@@ -1,4 +1,5 @@
 #include "../include/filters.h"
+#include <sys/types.h>
 
 #include <algorithm>
 #include <cmath>
@@ -87,6 +88,16 @@ std::vector<double> get_1d_gaussian_kernel(int kernel_size, double sigma) {
   return kernel;
 }
 
+GaussianKernels getGaussianKernels(int kernel_size, double sigmaX,
+                                   double sigmaY) {
+  GaussianKernels gk;
+
+  gk.kernelX = get_1d_gaussian_kernel(kernel_size, sigmaX);
+  gk.kernelY = get_1d_gaussian_kernel(kernel_size, sigmaY);
+
+  return gk;
+}
+
 int get_bounded_index(int h, int w, int height, int width, int channels,
                       BorderMode mode) {
   auto get_reflect_idx = [](int k, int n, BorderMode mode) {
@@ -162,6 +173,44 @@ void sample_pixel(std::vector<double>& px, const T* data, int h, int w,
   }
 }
 
+template <Axis A, typename IN_T, typename KRNL_T>
+void convolution1D(double* out_data, IN_T* in_data,
+                   const std::vector<KRNL_T>& kernel, int width, int height,
+                   int channels, BorderMode mode, const double* borderValue) {
+  std::vector<double> sum(channels, 0.0);
+  std::vector<double> px(channels, 0.0);
+  int n = kernel.size() / 2;
+
+  for (int row = 0; row < height; row++) {
+    for (int col = 0; col < width; col++) {
+      int index = (row * width + col) * channels;
+
+      std::fill(sum.begin(), sum.end(), 0.0);
+      for (int k = -n; k <= n; k++) {
+        int row_ = row;
+        int col_ = col;
+        if constexpr (A == Axis::Horizontal) {
+          col_ = col + k;
+        } else {
+          row_ = row + k;
+        }
+        sample_pixel(px, in_data, row_, col_, height, width, channels, mode,
+                     borderValue);
+
+        auto kernel_val = kernel[k + n];
+        for (int c = 0; c < channels; c++) {
+          sum[c] += (px[c] * kernel_val);
+        }
+      }
+
+      // store in temp buffer
+      for (int c = 0; c < channels; c++) {
+        out_data[index + c] = sum[c];
+      }
+    }
+  }
+}
+
 void gaussian_blur(Image& output, const Image& input, int kernel_size,
                    float sigmaX, float sigmaY, BorderMode mode,
                    const double* borderValue) {
@@ -169,8 +218,7 @@ void gaussian_blur(Image& output, const Image& input, int kernel_size,
     sigmaY = sigmaX;
   }
 
-  auto kernelX = get_1d_gaussian_kernel(kernel_size, sigmaX);
-  int n = kernelX.size() / 2;
+  auto kernels = getGaussianKernels(kernel_size, sigmaX, sigmaY);
 
   auto height = input.getHeight();
   auto width = input.getWidth();
@@ -179,59 +227,23 @@ void gaussian_blur(Image& output, const Image& input, int kernel_size,
   auto output_data_ptr = output.getDataMutable();
 
   // Allocate a temporary buffer to store intermediate results
-  std::vector<double> temp_buffer(height * width * channels);
-
-  std::vector<double> sum(channels, 0.0);
-  std::vector<double> px(channels, 0.0);
+  std::vector<double> temp_bufferX(height * width * channels);
+  std::vector<double> temp_bufferY(height * width * channels);
 
   // horizontal pass
-  for (int row = 0; row < height; row++) {
-    for (int col = 0; col < width; col++) {
-      int index = (row * width + col) * channels;
-
-      std::fill(sum.begin(), sum.end(), 0.0);
-      for (int k = -n; k <= n; k++) {
-        sample_pixel(px, input_data_ptr, row, col + k, height, width, channels,
-                     mode, borderValue);
-
-        auto kernel_val = kernelX[k + n];
-        for (int c = 0; c < channels; c++) {
-          sum[c] += (px[c] * kernel_val);
-        }
-      }
-
-      // store in temp buffer
-      for (int c = 0; c < channels; c++) {
-        temp_buffer[index + c] = sum[c];
-      }
-    }
-  }
-
-  auto kernelY = get_1d_gaussian_kernel(kernel_size, sigmaY);
-  n = kernelY.size() / 2;
+  convolution1D<Axis::Horizontal>(temp_bufferX.data(), input_data_ptr,
+                                  kernels.kernelX, width, height, channels,
+                                  mode, borderValue);
 
   // vertical pass
-  for (int row = 0; row < height; row++) {
-    for (int col = 0; col < width; col++) {
-      int index = (row * width + col) * channels;
+  convolution1D<Axis::Vertical>(temp_bufferY.data(), temp_bufferX.data(),
+                                kernels.kernelY, width, height, channels, mode,
+                                borderValue);
 
-      std::fill(sum.begin(), sum.end(), 0.0);
-      for (int k = -n; k <= n; k++) {
-        sample_pixel(px, temp_buffer.data(), row + k, col, height, width,
-                     channels, mode, borderValue);
-
-        auto kernel_val = kernelY[k + n];
-        for (int c = 0; c < channels; c++) {
-          sum[c] += (px[c] * kernel_val);
-        }
-      }
-
-      // store in output buffer
-      for (int c = 0; c < channels; c++) {
-        output_data_ptr[index + c] =
-            static_cast<uint8_t>(std::clamp(std::lround(sum[c]), 0L, 255L));
-      }
-    }
+  // Convert double to uint8_t data
+  for (int idx = 0; idx < temp_bufferY.size(); idx++) {
+    output_data_ptr[idx] = static_cast<uint8_t>(
+        std::clamp(std::lround(temp_bufferY[idx]), 0L, 255L));
   }
 }
 
@@ -288,11 +300,6 @@ std::vector<long long> generateDifferentiationVector(int N) {
   return D;
 }
 
-struct SobelKernels {
-  std::vector<long long> kernelX;
-  std::vector<long long> kernelY;
-};
-
 SobelKernels generateSobelKernels(int dx, int dy, int kernel_size) {
   if (dx == 0 && dy == 0) {
     throw std::invalid_argument("Both dx and dy can not be equal to 0");
@@ -324,57 +331,23 @@ void sobel(std::vector<TYPE>& output, const Image& input, int dx, int dy,
   std::vector<double> temp_buffer(height * width * channels);
 
   auto kernels = generateSobelKernels(dx, dy, kernel_size);
-  int n = kernels.kernelX.size() / 2;
 
   std::vector<double> sum(channels, 0.0);
   std::vector<double> px(channels, 0.0);
 
   // horizontal pass
-  for (int row = 0; row < height; row++) {
-    for (int col = 0; col < width; col++) {
-      int index = (row * width + col) * channels;
-
-      std::fill(sum.begin(), sum.end(), 0.0);
-      for (int k = -n; k <= n; k++) {
-        sample_pixel(px, input_data_ptr, row, col + k, height, width, channels,
-                     mode, borderValue);
-
-        auto kernel_val = kernels.kernelX[k + n];
-        for (int c = 0; c < channels; c++) {
-          sum[c] += (px[c] * kernel_val);
-        }
-      }
-
-      // store in temp buffer
-      for (int c = 0; c < channels; c++) {
-        temp_buffer[index + c] = sum[c];
-      }
-    }
-  }
-
-  n = kernels.kernelY.size() / 2;
+  convolution1D<Axis::Horizontal>(temp_buffer.data(), input_data_ptr,
+                                  kernels.kernelX, width, height, channels,
+                                  mode, borderValue);
 
   // vertical pass
-  for (int row = 0; row < height; row++) {
-    for (int col = 0; col < width; col++) {
-      int index = (row * width + col) * channels;
+  convolution1D<Axis::Vertical>(output.data(), temp_buffer.data(),
+                                kernels.kernelY, width, height, channels, mode,
+                                borderValue);
 
-      std::fill(sum.begin(), sum.end(), 0.0);
-      for (int k = -n; k <= n; k++) {
-        sample_pixel(px, temp_buffer.data(), row + k, col, height, width,
-                     channels, mode, borderValue);
-
-        auto kernel_val = kernels.kernelY[k + n];
-        for (int c = 0; c < channels; c++) {
-          sum[c] += (px[c] * kernel_val);
-        }
-      }
-
-      // store in output buffer
-      for (int c = 0; c < channels; c++) {
-        output[index + c] = sum[c] * scale + delta;
-      }
-    }
+  // Apply scale and delta
+  for (int idx = 0; idx < output.size(); idx++) {
+    output[idx] = output[idx] * scale + delta;
   }
 }
 
