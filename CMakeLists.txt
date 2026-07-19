@@ -18,9 +18,11 @@ FetchContent_MakeAvailable(googletest)
 set(SOURCES
     src/main.cpp
     src/image.cpp
+    src/engine.cpp
+    src/threadpool.cpp
 )
 
-add_library(filters_lib src/filters.cpp src/image.cpp)
+add_library(filters_lib src/filters.cpp src/image.cpp src/threadpool.cpp)
 target_include_directories(filters_lib PUBLIC include)
 
 add_executable(engine ${SOURCES})

@@ -11,6 +11,8 @@
 #include <utility>
 #include <vector>
 
+#include "threadpool.h"
+
 namespace {
 
 std::vector<uint8_t> ReferenceGrayscale(const std::vector<uint8_t>& input,
@@ -90,7 +92,8 @@ TEST(GrayscaleTest, MatchesOpenCvGrayscaleReference) {
   CopyToImage(src, image);
 
   Image dst(2, 2, 1);
-  grayscale(dst, src);
+  ThreadPool pool(1);
+  grayscale(dst, src, pool, 1);
 
   const std::vector<uint8_t> reference = ReferenceGrayscale(image, 2, 2, 3);
   const std::vector<uint8_t> output = ReadImageBytes(dst);
@@ -107,7 +110,8 @@ TEST(GrayscaleTest, ProducesSingleChannelOutputForRgbaInput) {
   CopyToImage(src, image);
 
   Image dst(2, 1, 1);
-  grayscale(dst, src);
+  ThreadPool pool(1);
+  grayscale(dst, src, pool, 1);
 
   const std::vector<uint8_t> reference = ReferenceGrayscale(image, 2, 1, 4);
   const std::vector<uint8_t> output = ReadImageBytes(dst);
@@ -135,7 +139,8 @@ TEST(GrayscaleTest, MatchesOpenCvGrayscaleReferenceWithRandomShapes) {
     CopyToImage(src, image);
 
     Image dst(width, height, 1);
-    grayscale(dst, src);
+    ThreadPool pool(1);
+    grayscale(dst, src, pool, 1);
 
     const std::vector<uint8_t> reference =
         ReferenceGrayscale(image, width, height, channels);

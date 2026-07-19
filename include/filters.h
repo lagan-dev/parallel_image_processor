@@ -2,9 +2,11 @@
 #define FILTERS_H
 
 #include <ostream>
+#include <thread>
 #include <vector>
 
 #include "image.h"
+#include "threadpool.h"
 
 enum BorderMode {
   BORDER_CLAMP,
@@ -29,16 +31,18 @@ struct SobelKernels {
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec);
 
-void grayscale(Image& dst, const Image& src);
+void grayscale(Image& dst, const Image& src, ThreadPool& pool,
+               unsigned int num_threads);
 
-void gaussian_blur(Image& output, const Image& input, int kernel_size,
-                   float sigmaX, float sigmaY = 0.0,
-                   BorderMode mode = BORDER_REFLECT,
+void gaussian_blur(Image& output, const Image& input, ThreadPool& pool,
+                   unsigned int num_threads, int kernel_size, float sigmaX,
+                   float sigmaY = 0.0, BorderMode mode = BORDER_REFLECT,
                    const double* borderValue = nullptr);
 
 template <typename TYPE>
-void sobel(std::vector<TYPE>& output, const Image& input, int dx, int dy,
-           int kernel_size, double scale = 1.0, double delta = 0.0,
+void sobel(std::vector<TYPE>& output, const Image& input, ThreadPool& pool,
+           unsigned int num_threads, int dx, int dy, int kernel_size,
+           double scale = 1.0, double delta = 0.0,
            BorderMode mode = BORDER_REFLECT,
            const double* borderValue = nullptr);
 
