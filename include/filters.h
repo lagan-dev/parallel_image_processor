@@ -28,9 +28,6 @@ struct SobelKernels {
   std::vector<long long> kernelY;
 };
 
-template <typename T>
-std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec);
-
 void grayscale(Image& dst, const Image& src, ThreadPool& pool,
                unsigned int num_threads);
 

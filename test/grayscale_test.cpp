@@ -110,8 +110,8 @@ TEST(GrayscaleTest, ProducesSingleChannelOutputForRgbaInput) {
   CopyToImage(src, image);
 
   Image dst(2, 1, 1);
-  ThreadPool pool(1);
-  grayscale(dst, src, pool, 1);
+  ThreadPool pool(4);
+  grayscale(dst, src, pool, 4);
 
   const std::vector<uint8_t> reference = ReferenceGrayscale(image, 2, 1, 4);
   const std::vector<uint8_t> output = ReadImageBytes(dst);
@@ -139,8 +139,8 @@ TEST(GrayscaleTest, MatchesOpenCvGrayscaleReferenceWithRandomShapes) {
     CopyToImage(src, image);
 
     Image dst(width, height, 1);
-    ThreadPool pool(1);
-    grayscale(dst, src, pool, 1);
+    ThreadPool pool(4);
+    grayscale(dst, src, pool, 4);
 
     const std::vector<uint8_t> reference =
         ReferenceGrayscale(image, width, height, channels);
