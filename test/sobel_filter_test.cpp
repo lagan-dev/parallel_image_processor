@@ -45,8 +45,8 @@ std::vector<double> RunFilter(const std::vector<uint8_t>& input, int width,
   Image src(width, height, channels);
   CopyToImage(src, input);
   std::vector<double> output(width * height * channels);
-  ThreadPool pool(1);
-  sobel<double>(output, src, pool, 1, dx, dy, kernel_size, scale, delta, mode);
+  ThreadPool pool(4);
+  sobel<double>(output, src, pool, 4, dx, dy, kernel_size, scale, delta, mode);
   return output;
 }
 

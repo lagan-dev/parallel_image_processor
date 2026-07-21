@@ -49,8 +49,8 @@ std::vector<uint8_t> RunFilter(const std::vector<uint8_t>& input, int width,
   Image src(width, height, channels);
   CopyToImage(src, input);
   Image dst(width, height, channels);
-  ThreadPool pool(1);
-  gaussian_blur(dst, src, pool, 1, kernel_size, sigmaX, sigmaY, BORDER_CLAMP);
+  ThreadPool pool(4);
+  gaussian_blur(dst, src, pool, 4, kernel_size, sigmaX, sigmaY, BORDER_CLAMP);
   return ReadImageBytes(dst);
 }
 
@@ -176,8 +176,8 @@ std::vector<uint8_t> RunFilterWithParams(const std::vector<uint8_t>& input,
   Image src(width, height, channels);
   CopyToImage(src, input);
   Image dst(width, height, channels);
-  ThreadPool pool(1);
-  gaussian_blur(dst, src, pool, 1, kernel_size, sigmaX, sigmaY, mode);
+  ThreadPool pool(4);
+  gaussian_blur(dst, src, pool, 4, kernel_size, sigmaX, sigmaY, mode);
   return ReadImageBytes(dst);
 }
 

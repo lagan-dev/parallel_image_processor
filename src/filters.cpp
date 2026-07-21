@@ -14,21 +14,6 @@
 #include "threadpool.h"
 
 template <typename T>
-std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec) {
-  os << "[";
-
-  for (std::size_t i = 0; i < vec.size(); i++) {
-    os << vec[i];
-    if (i + 1 < vec.size()) {
-      os << ", ";
-    }
-  }
-
-  os << "]\n";
-  return os;
-}
-
-template <typename T>
 using SamplePixelFn = void (*)(std::vector<double>&, const T*, int, int, int,
                                int, int, const double*);
 
@@ -355,6 +340,7 @@ void gaussian_blur(Image& output, const Image& input, ThreadPool& pool,
     convolution1D<Axis::Vertical>(temp_bufferY.data(), temp_bufferX.data(),
                                   kernels.kernelY, width, height, channels,
                                   mode, borderValue, num_threads, pool);
+    pool.waitAll();
   }
 
   // Convert double to uint8_t data
@@ -497,6 +483,7 @@ void sobel(std::vector<TYPE>& output, const Image& input, ThreadPool& pool,
     convolution1D<Axis::Vertical>(output.data(), temp_buffer.data(),
                                   kernels.kernelY, width, height, channels,
                                   mode, borderValue, num_threads, pool);
+    pool.waitAll();
   }
 
   // Apply scale and delta
