@@ -1,6 +1,7 @@
 #include <filters.h>
 #include <gtest/gtest.h>
 #include <image.h>
+#include <opencv2/core/hal/interface.h>
 
 #include <array>
 #include <cmath>
@@ -8,7 +9,6 @@
 #include <cstring>
 #include <iomanip>
 #include <opencv2/core.hpp>
-#include <opencv2/core/hal/interface.h>
 #include <opencv2/imgproc.hpp>
 #include <random>
 #include <stdexcept>
@@ -45,7 +45,8 @@ std::vector<double> RunFilter(const std::vector<uint8_t>& input, int width,
   Image src(width, height, channels);
   CopyToImage(src, input);
   std::vector<double> output(width * height * channels);
-  sobel<double>(output, src, dx, dy, kernel_size, scale, delta, mode);
+  ThreadPool pool(4);
+  sobel<double>(output, src, pool, 4, dx, dy, kernel_size, scale, delta, mode);
   return output;
 }
 

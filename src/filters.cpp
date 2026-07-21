@@ -1,4 +1,5 @@
 #include "../include/filters.h"
+
 #include <sys/types.h>
 
 #include <algorithm>
@@ -7,24 +8,17 @@
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
+#include "threadpool.h"
+
 template <typename T>
-std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec) {
-  os << "[";
+using SamplePixelFn = void (*)(std::vector<double>&, const T*, int, int, int,
+                               int, int, const double*);
 
-  for (std::size_t i = 0; i < vec.size(); i++) {
-    os << vec[i];
-    if (i + 1 < vec.size()) {
-      os << ", ";
-    }
-  }
-
-  os << "]\n";
-  return os;
-}
-
-void grayscale(Image& dst, const Image& src) {
+void grayscale(Image& dst, const Image& src, ThreadPool& pool,
+               unsigned int num_threads) {
   // Grayscale = (0.299 × R) + (0.587 × G) + (0.114 × B)
 
   auto height = src.getHeight();
@@ -34,19 +28,53 @@ void grayscale(Image& dst, const Image& src) {
 
   auto out_data = dst.getDataMutable();
 
-  for (int idx = 0; idx < width * height; idx++) {
-    auto px = input_data + (idx * channels);
+  if (num_threads == 0) num_threads = 1;
 
-    // Get RGB values
-    unsigned char r = px[0];
-    unsigned char g = px[1];
-    unsigned char b = px[2];
+  if (num_threads == 1) {
+    for (int idx = 0; idx < width * height; idx++) {
+      auto px = input_data + (idx * channels);
 
-    // Calc grayscale values
-    unsigned char gray = (0.299 * r) + (0.587 * g) + (0.114 * b);
+      // Get RGB values
+      unsigned char r = px[0];
+      unsigned char g = px[1];
+      unsigned char b = px[2];
 
-    // Store output values
-    out_data[idx] = gray;
+      // Calc grayscale values
+      unsigned char gray = (0.299 * r) + (0.587 * g) + (0.114 * b);
+
+      // Store output values
+      out_data[idx] = gray;
+    }
+  } else {
+    int64_t total = 1L * width * height;
+    int64_t chunk = (total + num_threads - 1) / num_threads;
+
+    for (int t = 0; t < num_threads; t++) {
+      int64_t start = t * chunk;
+      int64_t end = std::min((start + chunk), total);
+
+      if (start >= end) break;
+
+      pool.enqueue([=]() {
+        for (int idx = start; idx < end; idx++) {
+          auto px = input_data + (idx * channels);
+
+          // Get RGB values
+          unsigned char r = px[0];
+          unsigned char g = px[1];
+          unsigned char b = px[2];
+
+          // Calc grayscale values
+          unsigned char gray = (0.299 * r) + (0.587 * g) + (0.114 * b);
+
+          // Store output values
+          out_data[idx] = gray;
+        }
+      });
+    }
+
+    // wait for all threads to complete before returning
+    pool.waitAll();
   }
 }
 
@@ -98,10 +126,10 @@ GaussianKernels getGaussianKernels(int kernel_size, double sigmaX,
   return gk;
 }
 
-int get_bounded_index(int h, int w, int height, int width, int channels,
-                      BorderMode mode) {
-  auto get_reflect_idx = [](int k, int n, BorderMode mode) {
-    int delta = (mode == BORDER_REFLECT);
+template <BorderMode Mode>
+int get_bounded_index(int h, int w, int height, int width, int channels) {
+  auto get_reflect_idx = [](int k, int n) {
+    constexpr int delta = (Mode == BORDER_REFLECT);
     if (n == 1) return 0;
 
     while (k < 0 || k >= n) {
@@ -115,44 +143,30 @@ int get_bounded_index(int h, int w, int height, int width, int channels,
     return k;
   };
 
-  switch (mode) {
-  case BORDER_CLAMP: {
+  if constexpr (Mode == BORDER_CLAMP) {
     h = std::clamp(h, 0, height - 1);
     w = std::clamp(w, 0, width - 1);
-
-    break;
-  }
-
-  case BORDER_WRAP: {
+  } else if constexpr (Mode == BORDER_WRAP) {
     h = h % height;
     if (h < 0) h += height;
 
     w = w % width;
     if (w < 0) w += width;
-
-    break;
-  }
-
-  case BORDER_REFLECT:
-  case BORDER_MIRROR: {
-    h = get_reflect_idx(h, height, mode);
-    w = get_reflect_idx(w, width, mode);
-
-    break;
-  }
-
-  default:
+  } else if constexpr (Mode == BORDER_REFLECT || Mode == BORDER_MIRROR) {
+    h = get_reflect_idx(h, height);
+    w = get_reflect_idx(w, width);
+  } else {
     std::cout << "BorderMode not supported!!" << std::endl;
   }
 
   return (h * width + w) * channels;
 }
 
-template <typename T>
+template <typename T, BorderMode Mode>
 void sample_pixel(std::vector<double>& px, const T* data, int h, int w,
-                  int height, int width, int channels, BorderMode mode,
+                  int height, int width, int channels,
                   const double* borderValue = nullptr) {
-  if (mode == BORDER_CONSTANT) {
+  if constexpr (Mode == BORDER_CONSTANT) {
     if ((h >= 0 && h < height) && (w >= 0 && w < width)) {
       int idx = (h * width + w) * channels;
       for (int c = 0; c < channels; c++) {
@@ -165,7 +179,7 @@ void sample_pixel(std::vector<double>& px, const T* data, int h, int w,
       }
     }
   } else {
-    auto idx = get_bounded_index(h, w, height, width, channels, mode);
+    auto idx = get_bounded_index<Mode>(h, w, height, width, channels);
 
     for (int c = 0; c < channels; c++) {
       px[c] = data[idx + c];
@@ -173,50 +187,125 @@ void sample_pixel(std::vector<double>& px, const T* data, int h, int w,
   }
 }
 
+template <typename T>
+SamplePixelFn<T> GetSamplePixelFn(BorderMode mode) {
+  switch (mode) {
+    case BORDER_CLAMP:
+      return &sample_pixel<T, BORDER_CLAMP>;
+
+    case BORDER_REFLECT:
+      return &sample_pixel<T, BORDER_REFLECT>;
+
+    case BORDER_MIRROR:
+      return &sample_pixel<T, BORDER_MIRROR>;
+
+    case BORDER_WRAP:
+      return &sample_pixel<T, BORDER_WRAP>;
+
+    case BORDER_CONSTANT:
+      return &sample_pixel<T, BORDER_CONSTANT>;
+
+    default:
+      throw std::invalid_argument("Unknown BorderMode");
+  }
+}
+
+// Serial variant — same math, zero std::thread involvement
 template <Axis A, typename IN_T, typename KRNL_T>
-void convolution1D(double* out_data, IN_T* in_data,
-                   const std::vector<KRNL_T>& kernel, int width, int height,
-                   int channels, BorderMode mode, const double* borderValue) {
+void convolution1D_serial(double* out_data, IN_T* in_data,
+                          const std::vector<KRNL_T>& kernel, int width,
+                          int height, int channels, BorderMode mode,
+                          const double* borderValue) {
+  int n = kernel.size() / 2;
   std::vector<double> sum(channels, 0.0);
   std::vector<double> px(channels, 0.0);
-  int n = kernel.size() / 2;
+
+  auto sample_pixel_fn = GetSamplePixelFn<IN_T>(mode);
 
   for (int row = 0; row < height; row++) {
     for (int col = 0; col < width; col++) {
       int index = (row * width + col) * channels;
-
       std::fill(sum.begin(), sum.end(), 0.0);
       for (int k = -n; k <= n; k++) {
-        int row_ = row;
-        int col_ = col;
-        if constexpr (A == Axis::Horizontal) {
+        int row_ = row, col_ = col;
+        if constexpr (A == Axis::Horizontal)
           col_ = col + k;
-        } else {
+        else
           row_ = row + k;
-        }
-        sample_pixel(px, in_data, row_, col_, height, width, channels, mode,
-                     borderValue);
+
+        sample_pixel_fn(px, in_data, row_, col_, height, width, channels,
+                        borderValue);
 
         auto kernel_val = kernel[k + n];
-        for (int c = 0; c < channels; c++) {
-          sum[c] += (px[c] * kernel_val);
-        }
+        for (int c = 0; c < channels; c++) sum[c] += px[c] * kernel_val;
       }
-
-      // store in temp buffer
-      for (int c = 0; c < channels; c++) {
-        out_data[index + c] = sum[c];
-      }
+      for (int c = 0; c < channels; c++) out_data[index + c] = sum[c];
     }
   }
 }
 
-void gaussian_blur(Image& output, const Image& input, int kernel_size,
-                   float sigmaX, float sigmaY, BorderMode mode,
-                   const double* borderValue) {
+template <Axis A, typename IN_T, typename KRNL_T>
+void convolution1D(double* out_data, IN_T* in_data,
+                   const std::vector<KRNL_T>& kernel, int width, int height,
+                   int channels, BorderMode mode, const double* borderValue,
+                   unsigned int num_threads, ThreadPool& pool) {
+  if (num_threads == 0) num_threads = 1;
+
+  int n = kernel.size() / 2;
+
+  int64_t chunk = (height + num_threads - 1) / num_threads;
+  auto sample_pixel_fn = GetSamplePixelFn<IN_T>(mode);
+
+  for (int t = 0; t < num_threads; t++) {
+    auto start_h = t * chunk;
+    auto end_h = std::min((start_h + chunk), 1L * height);
+
+    if (start_h >= end_h) break;
+
+    pool.enqueue([=]() {
+      std::vector<double> sum(channels, 0.0);
+      std::vector<double> px(channels, 0.0);
+
+      for (int row = start_h; row < end_h; row++) {
+        for (int col = 0; col < width; col++) {
+          int index = (row * width + col) * channels;
+
+          std::fill(sum.begin(), sum.end(), 0.0);
+          for (int k = -n; k <= n; k++) {
+            int row_ = row;
+            int col_ = col;
+            if constexpr (A == Axis::Horizontal) {
+              col_ = col + k;
+            } else {
+              row_ = row + k;
+            }
+            sample_pixel_fn(px, in_data, row_, col_, height, width, channels,
+                            borderValue);
+
+            auto kernel_val = kernel[k + n];
+            for (int c = 0; c < channels; c++) {
+              sum[c] += (px[c] * kernel_val);
+            }
+          }
+
+          // store in temp buffer
+          for (int c = 0; c < channels; c++) {
+            out_data[index + c] = sum[c];
+          }
+        }
+      }
+    });
+  }
+}
+
+void gaussian_blur(Image& output, const Image& input, ThreadPool& pool,
+                   unsigned int num_threads, int kernel_size, float sigmaX,
+                   float sigmaY, BorderMode mode, const double* borderValue) {
   if (sigmaY == 0.0) {
     sigmaY = sigmaX;
   }
+
+  if (num_threads == 0) num_threads = 1;
 
   auto kernels = getGaussianKernels(kernel_size, sigmaX, sigmaY);
 
@@ -231,19 +320,56 @@ void gaussian_blur(Image& output, const Image& input, int kernel_size,
   std::vector<double> temp_bufferY(height * width * channels);
 
   // horizontal pass
-  convolution1D<Axis::Horizontal>(temp_bufferX.data(), input_data_ptr,
-                                  kernels.kernelX, width, height, channels,
-                                  mode, borderValue);
+  if (num_threads == 1) {
+    convolution1D_serial<Axis::Horizontal>(temp_bufferX.data(), input_data_ptr,
+                                           kernels.kernelX, width, height,
+                                           channels, mode, borderValue);
+  } else {
+    convolution1D<Axis::Horizontal>(temp_bufferX.data(), input_data_ptr,
+                                    kernels.kernelX, width, height, channels,
+                                    mode, borderValue, num_threads, pool);
+    pool.waitAll();
+  }
 
   // vertical pass
-  convolution1D<Axis::Vertical>(temp_bufferY.data(), temp_bufferX.data(),
-                                kernels.kernelY, width, height, channels, mode,
-                                borderValue);
+  if (num_threads == 1) {
+    convolution1D_serial<Axis::Vertical>(
+        temp_bufferY.data(), temp_bufferX.data(), kernels.kernelY, width,
+        height, channels, mode, borderValue);
+  } else {
+    convolution1D<Axis::Vertical>(temp_bufferY.data(), temp_bufferX.data(),
+                                  kernels.kernelY, width, height, channels,
+                                  mode, borderValue, num_threads, pool);
+    pool.waitAll();
+  }
 
   // Convert double to uint8_t data
-  for (int idx = 0; idx < temp_bufferY.size(); idx++) {
-    output_data_ptr[idx] = static_cast<uint8_t>(
-        std::clamp(std::lround(temp_bufferY[idx]), 0L, 255L));
+  if (num_threads == 1) {
+    for (int idx = 0; idx < temp_bufferY.size(); idx++) {
+      output_data_ptr[idx] = static_cast<uint8_t>(
+          std::clamp(std::lround(temp_bufferY[idx]), 0L, 255L));
+    }
+  } else {
+    int64_t total = temp_bufferY.size();
+    int64_t chunk = (total + num_threads - 1) / num_threads;
+
+    std::vector<std::thread> workers;
+    for (int t = 0; t < num_threads; t++) {
+      auto start = t * chunk;
+      auto end = std::min((start + chunk), total);
+
+      if (start >= end) break;
+
+      pool.enqueue([=]() {
+        for (int idx = start; idx < end; idx++) {
+          output_data_ptr[idx] = static_cast<uint8_t>(
+              std::clamp(std::lround(temp_bufferY[idx]), 0L, 255L));
+        }
+      });
+    }
+
+    // join all sub-threads with the main
+    pool.waitAll();
   }
 }
 
@@ -319,8 +445,9 @@ SobelKernels generateSobelKernels(int dx, int dy, int kernel_size) {
 // ========= HELPER FUNCTIONS FOR SOBEL OPERATOR [END] ==========
 
 template <typename TYPE>
-void sobel(std::vector<TYPE>& output, const Image& input, int dx, int dy,
-           int kernel_size, double scale, double delta, BorderMode mode,
+void sobel(std::vector<TYPE>& output, const Image& input, ThreadPool& pool,
+           unsigned int num_threads, int dx, int dy, int kernel_size,
+           double scale, double delta, BorderMode mode,
            const double* borderValue) {
   auto height = input.getHeight();
   auto width = input.getWidth();
@@ -336,22 +463,57 @@ void sobel(std::vector<TYPE>& output, const Image& input, int dx, int dy,
   std::vector<double> px(channels, 0.0);
 
   // horizontal pass
-  convolution1D<Axis::Horizontal>(temp_buffer.data(), input_data_ptr,
-                                  kernels.kernelX, width, height, channels,
-                                  mode, borderValue);
+  if (num_threads == 1) {
+    convolution1D_serial<Axis::Horizontal>(temp_buffer.data(), input_data_ptr,
+                                           kernels.kernelX, width, height,
+                                           channels, mode, borderValue);
+  } else {
+    convolution1D<Axis::Horizontal>(temp_buffer.data(), input_data_ptr,
+                                    kernels.kernelX, width, height, channels,
+                                    mode, borderValue, num_threads, pool);
+    pool.waitAll();
+  }
 
   // vertical pass
-  convolution1D<Axis::Vertical>(output.data(), temp_buffer.data(),
-                                kernels.kernelY, width, height, channels, mode,
-                                borderValue);
+  if (num_threads == 1) {
+    convolution1D_serial<Axis::Vertical>(output.data(), temp_buffer.data(),
+                                         kernels.kernelY, width, height,
+                                         channels, mode, borderValue);
+  } else {
+    convolution1D<Axis::Vertical>(output.data(), temp_buffer.data(),
+                                  kernels.kernelY, width, height, channels,
+                                  mode, borderValue, num_threads, pool);
+    pool.waitAll();
+  }
 
   // Apply scale and delta
-  for (int idx = 0; idx < output.size(); idx++) {
-    output[idx] = output[idx] * scale + delta;
+  if (num_threads == 1) {
+    for (int idx = 0; idx < output.size(); idx++) {
+      output[idx] = std::fma(output[idx], scale, delta);
+    }
+  } else {
+    int64_t total = output.size();
+    int64_t chunk = (total + num_threads - 1) / num_threads;
+
+    for (int t = 0; t < num_threads; t++) {
+      auto start = t * chunk;
+      auto end = std::min((start + chunk), total);
+
+      if (start >= end) break;
+
+      pool.enqueue([=, &output]() {
+        for (int idx = start; idx < end; idx++) {
+          output[idx] = std::fma(output[idx], scale, delta);
+        }
+      });
+    }
+
+    // join all sub-threads with the main
+    pool.waitAll();
   }
 }
 
 template void sobel<double>(std::vector<double>& output, const Image& input,
-                            int dx, int dy, int kernel_size, double scale,
-                            double delta, BorderMode mode,
-                            const double* borderValue);
+                            ThreadPool& pool, unsigned int num_threads, int dx,
+                            int dy, int kernel_size, double scale, double delta,
+                            BorderMode mode, const double* borderValue);
