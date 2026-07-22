@@ -19,7 +19,16 @@ using SamplePixelFn = void (*)(std::vector<double>&, const T*, int, int, int,
 
 void grayscale(Image& dst, const Image& src, ThreadPool& pool,
                unsigned int num_threads) {
-  // Grayscale = (0.299 × R) + (0.587 × G) + (0.114 × B)
+  // Standard formula:
+  // ----> Grayscale = (0.299 × R) + (0.587 × G) + (0.114 × B)
+
+  // OpenCv uses integer coefficients for the weighted sum:
+  // OpenCV uses 15-bit shift precision in C++ CPU fallback mode:
+  static const int R2Y = 9798;  // round(0.299 * 32768)
+  static const int G2Y = 19235; // round(0.587 * 32768)
+  static const int B2Y = 3735;  // round(0.114 * 32768)
+  static const int shift = 15;
+  constexpr int half = 1 << (shift - 1);
 
   auto height = src.getHeight();
   auto width = src.getWidth();
@@ -40,7 +49,9 @@ void grayscale(Image& dst, const Image& src, ThreadPool& pool,
       unsigned char b = px[2];
 
       // Calc grayscale values
-      unsigned char gray = (0.299 * r) + (0.587 * g) + (0.114 * b);
+      // Comply  with OpenCV's implementation
+      unsigned char gray = static_cast<unsigned char>(
+          (R2Y * r + G2Y * g + B2Y * b + half) >> shift);
 
       // Store output values
       out_data[idx] = gray;
@@ -65,7 +76,9 @@ void grayscale(Image& dst, const Image& src, ThreadPool& pool,
           unsigned char b = px[2];
 
           // Calc grayscale values
-          unsigned char gray = (0.299 * r) + (0.587 * g) + (0.114 * b);
+          // Comply  with OpenCV's implementation
+          unsigned char gray = static_cast<unsigned char>(
+              (R2Y * r + G2Y * g + B2Y * b + half) >> shift);
 
           // Store output values
           out_data[idx] = gray;

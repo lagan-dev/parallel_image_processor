@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "threadpool.h"
+#define PRINT_LIMIT 10
 
 namespace {
 
@@ -67,11 +68,15 @@ void CompareToOpenCv(const std::vector<uint8_t>& output,
   for (size_t i = 0; i < output.size(); ++i) {
     const int diff =
         std::abs(static_cast<int>(output[i]) - static_cast<int>(reference[i]));
-    if (diff > 1) {
-      std::printf("  [idx=%zu] ref: %3d  actual: %3d  diff: %d\n", i,
-                  static_cast<int>(reference[i]), static_cast<int>(output[i]),
-                  diff);
+    if (diff > 0) {
       ++errors;
+
+      if (errors <= PRINT_LIMIT) {
+        std::cout << "Mismatch at index " << i
+                  << ": output = " << static_cast<int>(output[i])
+                  << ", reference = " << static_cast<int>(reference[i])
+                  << ", diff = " << diff << std::endl;
+      }
     }
   }
 
@@ -148,4 +153,34 @@ TEST(GrayscaleTest, MatchesOpenCvGrayscaleReferenceWithRandomShapes) {
 
     CompareToOpenCv(output, reference);
   }
+}
+
+TEST(GrayscaleTest, RoundsRatherThanTruncatesWeightedSum) {
+  // Pixels chosen so the weighted sum's fractional part is >= 0.5,
+  // meaning truncation and correct rounding disagree by exactly 1.
+  // yellow (255,255,0):  0.299*255 + 0.587*255 + 0.114*0   = 225.93 -> round 226, truncate 225
+  // cyan   (0,255,255):  0.587*255 + 0.114*255             = 178.755 -> round 179, truncate 178
+  std::vector<uint8_t> image = {
+      255, 255, 0,    // yellow
+      0,   255, 255,  // cyan
+  };
+
+  Image src(2, 1, 3);
+  CopyToImage(src, image);
+
+  Image dst(2, 1, 1);
+  ThreadPool pool(4);
+  grayscale(dst, src, pool, 4);
+
+  const std::vector<uint8_t> output = ReadImageBytes(dst);
+
+  // Exact match, not CompareToOpenCv's tolerant (diff > 1) check —
+  // that tolerance is wide enough to hide a truncate-vs-round bug,
+  // since the two can only ever differ by exactly 1.
+  EXPECT_EQ(output[0], 226) << "yellow pixel: expected rounded value 226, "
+                               "got " << static_cast<int>(output[0])
+                            << " (looks truncated, not rounded)";
+  EXPECT_EQ(output[1], 179) << "cyan pixel: expected rounded value 179, "
+                               "got " << static_cast<int>(output[1])
+                            << " (looks truncated, not rounded)";
 }
