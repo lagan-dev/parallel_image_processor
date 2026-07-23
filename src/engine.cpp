@@ -1,211 +1,350 @@
-// // engine.cpp
-// #include <algorithm>  // std::sort (used in benchmark median calc)
-// #include <fstream>  // std::ifstream, std::ofstream (used in benchmark CSV writing)
-// #include <chrono>
-// #include <condition_variable>
-// #include <cstring>
-// #include <functional>
-// #include <iostream>
-// #include <mutex>
-// #include <optional>
-// #include <queue>
-// #include <stdexcept>
-// #include <string>
-// #include <thread>
-// #include <vector>
+#include <algorithm>
+#include <cmath>
+#include <exception>
+#include <iostream>
+#include <stdexcept>
+#include <thread>
+#include <vector>
+#include <string>
+#include <optional>
 
-// #include "image.h"    // Image, BorderMode
-// #include "filters.h"  // gaussian_blur, sobel declarations
-// #include "threadpool.h"  // threadpool
+#include <filters.h>
+#include <image.h>
+#include <threadpool.h>
 
-// // ---------------------------------------------------------------------------
-// // parallel_for_rows
-// // ---------------------------------------------------------------------------
-// template <typename Func>
-// void parallel_for_rows(ThreadPool& pool, int total_rows, Func&& f,
-//                        unsigned int num_threads = 0) {
-//   if (num_threads == 0) num_threads = static_cast<unsigned int>(pool.size());
-//   num_threads = std::min<unsigned int>(num_threads, std::max(total_rows, 1));
+enum FilterType { GrayScale, GaussianBlur, Sobel };
 
-//   if (num_threads <= 1 || total_rows == 0) {
-//     f(0, total_rows);
-//     return;
-//   }
+struct Args {
+  std::string input_path;
+  std::string output_path;
+  FilterType filter = FilterType::GrayScale;
+  std::optional<int> kernel_size;
+  std::optional<BorderMode> border_mode = BorderMode::BORDER_REFLECT;
+  std::optional<float> sigmaX;
+  std::optional<float> sigmaY = 0.0f;
+  std::optional<int> dx;
+  std::optional<int> dy;
+  std::optional<double> scale = 1.0;
+  std::optional<double> delta = 0.0;
 
-//   int chunk = (total_rows + static_cast<int>(num_threads) - 1) /
-//               static_cast<int>(num_threads);
-//   for (unsigned int t = 0; t < num_threads; t++) {
-//     int start = static_cast<int>(t) * chunk;
-//     int end = std::min(start + chunk, total_rows);
-//     if (start >= end) break;
-//     pool.enqueue([start, end, &f]() { f(start, end); });
-//   }
-//   pool.waitAll();
-// }
+  int num_threads = 0;
 
-// // ---------------------------------------------------------------------------
-// // CLI args
-// // ---------------------------------------------------------------------------
-// enum class FilterType { GaussianBlur, Sobel };
+  bool benchmark = false;
+  std::string csv;
+};
 
-// struct Args {
-//   std::string input_path;
-//   std::string output_path;
-//   FilterType filter = FilterType::GaussianBlur;
-//   int kernel_size = 5;
-//   float sigmaX = 1.0f;
-//   float sigmaY = 0.0f;
-//   BorderMode border_mode = BorderMode::BORDER_REFLECT;
-//   unsigned int num_threads = 0;  // 0 => hardware_concurrency
-//   bool benchmark = false;
-//   std::string csv_path;
-// };
+void printUsage(const char* program) {
+  std::cout << "\nUsage:\n"
+            << "  " << program
+            << " --input <file> --output <file> --filter <filter> [options]\n\n"
 
-// void printUsage(const char* prog) {
-//   std::cerr << "Usage: " << prog
-//             << " --input <path> --output <path> --filter <blur|sobel>\n"
-//                "           [--kernel-size N] [--sigma X] [--border "
-//                "reflect|constant|replicate|wrap]\n"
-//                "           [--threads N] [--benchmark --csv <path>]\n";
-// }
+            << "Required arguments:\n"
+            << "  --input <file>          Input image path\n"
+            << "  --output <file>         Output image path\n"
+            << "  --filter <filter>       Filter to apply\n"
+            << "                          grayscale | blur | sobel\n\n"
 
-// std::optional<Args> parseArgs(int argc, char** argv) {
-//   Args args;
-//   for (int i = 1; i < argc; i++) {
-//     std::string arg = argv[i];
-//     auto next = [&]() -> std::string {
-//       if (i + 1 >= argc) throw std::runtime_error("missing value for " + arg);
-//       return argv[++i];
-//     };
+            << "Filter-specific options:\n"
+            << "  Blur:\n"
+            << "    --kernel_size <int>   Kernel size (odd positive integer)\n"
+            << "    --sigmaX <float>      Sigma in X direction\n"
+            << "    --sigmaY <float>      Sigma in Y direction\n"
+            << "    --border <mode>       Border handling mode\n\n"
 
-//     if (arg == "--input") {
-//       args.input_path = next();
-//     } else if (arg == "--output") {
-//       args.output_path = next();
-//     } else if (arg == "--filter") {
-//       std::string v = next();
-//       if (v == "blur")
-//         args.filter = FilterType::GaussianBlur;
-//       else if (v == "sobel")
-//         args.filter = FilterType::Sobel;
-//       else
-//         throw std::runtime_error("unknown filter: " + v);
-//     } else if (arg == "--kernel-size") {
-//       args.kernel_size = std::stoi(next());
-//     } else if (arg == "--sigma") {
-//       args.sigmaX = std::stof(next());
-//     } else if (arg == "--border") {
-//       std::string v = next();
-//       if (v == "reflect")
-//         args.border_mode = BorderMode::BORDER_REFLECT;
-//       else if (v == "mirror")
-//         args.border_mode = BorderMode::BORDER_MIRROR;
-//       else if (v == "constant")
-//         args.border_mode = BorderMode::BORDER_CONSTANT;
-//       else if (v == "clamp" || v == "replicate")
-//         args.border_mode = BorderMode::BORDER_CLAMP;
-//       else if (v == "wrap")
-//         args.border_mode = BorderMode::BORDER_WRAP;
-//       else
-//         throw std::runtime_error("unknown border mode: " + v);
-//     } else if (arg == "--threads") {
-//       args.num_threads = static_cast<unsigned int>(std::stoul(next()));
-//     } else if (arg == "--benchmark") {
-//       args.benchmark = true;
-//     } else if (arg == "--csv") {
-//       args.csv_path = next();
-//     } else if (arg == "--help" || arg == "-h") {
-//       return std::nullopt;
-//     } else {
-//       throw std::runtime_error("unrecognized argument: " + arg);
-//     }
-//   }
+            << "  Sobel:\n"
+            << "    --dx <int>            Derivative order in X\n"
+            << "    --dy <int>            Derivative order in Y\n"
+            << "    --kernel_size <int>   Kernel size\n"
+            << "    --scale <double>      Scale factor\n"
+            << "    --delta <double>      Delta value\n"
+            << "    --border <mode>       Border handling mode\n\n"
 
-//   if (args.input_path.empty() || args.output_path.empty()) {
-//     throw std::runtime_error("--input and --output are required");
-//   }
-//   return args;
-// }
+            << "Border modes:\n"
+            << "  clamp | reflect | mirror | wrap | constant\n\n"
 
-// // ---------------------------------------------------------------------------
-// // main
-// // ---------------------------------------------------------------------------
-// int main(int argc, char** argv) {
-//   Args args;
-//   try {
-//     auto parsed = parseArgs(argc, argv);
-//     if (!parsed) {
-//       printUsage(argv[0]);
-//       return 0;
-//     }
-//     args = *parsed;
-//   } catch (const std::exception& e) {
-//     std::cerr << "Error: " << e.what() << "\n";
-//     printUsage(argv[0]);
-//     return 1;
-//   }
+            << "Other options:\n"
+            << "  --threads <n>           Number of worker threads\n"
+            << "  --benchmark             Enable benchmarking\n"
+            << "  --csv <file>            Save benchmark results to CSV\n"
+            << "  -h, --help              Show this help message\n\n"
 
-//   unsigned int num_threads = args.num_threads;
-//   if (num_threads == 0) {
-//     num_threads = std::max(1u, std::thread::hardware_concurrency());
-//   }
+            << "Examples:\n"
+            << "  " << program
+            << " --input in.png --output out.png --filter grayscale\n\n"
 
-//   Image input;
-//   input.load(args.input_path);
-//   Image output(input.getWidth(), input.getHeight(), input.getChannels());
+            << "  " << program
+            << " --input in.png --output out.png --filter blur"
+            << " --kernel_size 5 --sigmaX 1.5 --sigmaY 1.5\n\n"
 
-//   ThreadPool pool(num_threads);
+            << "  " << program
+            << " --input in.png --output out.png --filter sobel"
+            << " --dx 1 --dy 0 --kernel_size 3\n";
+}
 
-//   double borderValue[4] = {0, 0, 0, 0};
+// ============== HELPER FUNCTIONS FOR PRINTING =================
+static const char* toString(FilterType filter) {
+  switch (filter) {
+  case FilterType::GrayScale:
+    return "grayscale";
+  case FilterType::GaussianBlur:
+    return "blur";
+  case FilterType::Sobel:
+    return "sobel";
+  default:
+    return "unknown";
+  }
+}
 
-//   auto runFilter = [&]() {
-//     switch (args.filter) {
-//     case FilterType::GaussianBlur:
-//       // gaussian_blur(output, input, args.kernel_size, args.sigmaX, args.sigmaY,
-//       //               args.border_mode, borderValue, num_threads, pool);
-//       break;
-//     case FilterType::Sobel:
-//       // sobel(output, input, args.border_mode, borderValue, num_threads, pool);
-//       break;
-//     }
-//   };
+static const char* toString(BorderMode mode) {
+  switch (mode) {
+  case BorderMode::BORDER_CLAMP:
+    return "clamp";
+  case BorderMode::BORDER_REFLECT:
+    return "reflect";
+  case BorderMode::BORDER_MIRROR:
+    return "mirror";
+  case BorderMode::BORDER_WRAP:
+    return "wrap";
+  case BorderMode::BORDER_CONSTANT:
+    return "constant";
+  default:
+    return "unknown";
+  }
+}
 
-//   if (!args.benchmark) {
-//     runFilter();
-//     output.save(args.output_path);  // adjust to your actual save API
-//     return 0;
-//   }
+void printArgs(const Args& args) {
+  auto printOptional = [](const auto& opt) {
+    if (opt)
+      std::cout << *opt;
+    else
+      std::cout << "<not set>";
+  };
 
-//   // --- benchmark mode: median over several runs, write CSV ---
-//   constexpr int kRuns = 7;
-//   std::vector<double> samples_ms;
-//   samples_ms.reserve(kRuns);
+  std::cout << "Arguments:\n";
+  std::cout << "----------------------------------------\n";
+  std::cout << "Input Path   : " << args.input_path << '\n';
+  std::cout << "Output Path  : " << args.output_path << '\n';
+  std::cout << "Filter       : " << toString(args.filter) << '\n';
 
-//   for (int i = 0; i < kRuns; i++) {
-//     auto t0 = std::chrono::steady_clock::now();
-//     runFilter();
-//     auto t1 = std::chrono::steady_clock::now();
-//     samples_ms.push_back(
-//         std::chrono::duration<double, std::milli>(t1 - t0).count());
-//   }
+  std::cout << "Kernel Size  : ";
+  printOptional(args.kernel_size);
+  std::cout << '\n';
 
-//   std::sort(samples_ms.begin(), samples_ms.end());
-//   double median_ms = samples_ms[samples_ms.size() / 2];
+  std::cout << "Border Mode  : ";
+  if (args.border_mode)
+    std::cout << toString(*args.border_mode);
+  else
+    std::cout << "<not set>";
+  std::cout << '\n';
 
-//   std::cout << "median: " << median_ms << " ms over " << kRuns
-//             << " runs, threads=" << num_threads << "\n";
+  std::cout << "Sigma X      : ";
+  printOptional(args.sigmaX);
+  std::cout << '\n';
 
-//   if (!args.csv_path.empty()) {
-//     bool file_exists = std::ifstream(args.csv_path).good();
-//     std::ofstream csv(args.csv_path, std::ios::app);
-//     if (!file_exists) {
-//       csv << "filter,threads,kernel_size,median_ms\n";
-//     }
-//     csv << (args.filter == FilterType::GaussianBlur ? "gaussian_blur" : "sobel")
-//         << "," << num_threads << "," << args.kernel_size << "," << median_ms
-//         << "\n";
-//   }
+  std::cout << "Sigma Y      : ";
+  printOptional(args.sigmaY);
+  std::cout << '\n';
 
-//   output.save(args.output_path);
-//   return 0;
-// }
+  std::cout << "dx           : ";
+  printOptional(args.dx);
+  std::cout << '\n';
+
+  std::cout << "dy           : ";
+  printOptional(args.dy);
+  std::cout << '\n';
+
+  std::cout << "Scale        : ";
+  printOptional(args.scale);
+  std::cout << '\n';
+
+  std::cout << "Delta        : ";
+  printOptional(args.delta);
+  std::cout << '\n';
+
+  std::cout << "Threads      : " << args.num_threads << '\n';
+  std::cout << "Benchmark    : " << (args.benchmark ? "true" : "false") << '\n';
+  std::cout << "CSV File     : " << (args.csv.empty() ? "<not set>" : args.csv)
+            << '\n';
+  std::cout << "----------------------------------------\n";
+}
+
+// ==============================================================
+
+std::optional<Args> parseArgs(int argc, char** argv) {
+  Args args;
+
+  for (int i = 1; i < argc; i++) {
+    std::string arg = argv[i];
+
+    if (arg == "--input") {
+      args.input_path = argv[++i];
+    } else if (arg == "--output") {
+      args.output_path = argv[++i];
+    } else if (arg == "--filter") {
+      std::string filter = argv[++i];
+
+      if (filter == "grayscale") {
+        args.filter = FilterType::GrayScale;
+      } else if (filter == "blur") {
+        args.filter = FilterType::GaussianBlur;
+      } else if (filter == "sobel") {
+        args.filter = FilterType::Sobel;
+      } else {
+        throw std::runtime_error("Unknown filter: " + filter);
+      }
+    } else if (arg == "--kernel_size") {
+      args.kernel_size = std::stoi(argv[++i]);
+    } else if (arg == "--border") {
+      std::string border = argv[++i];
+
+      if (border == "clamp") {
+        args.border_mode = BorderMode::BORDER_CLAMP;
+      } else if (border == "reflect") {
+        args.border_mode = BorderMode::BORDER_REFLECT;
+      } else if (border == "mirror") {
+        args.border_mode = BorderMode::BORDER_MIRROR;
+      } else if (border == "wrap") {
+        args.border_mode = BorderMode::BORDER_WRAP;
+      } else if (border == "constant") {
+        args.border_mode = BorderMode::BORDER_CONSTANT;
+      } else {
+        throw std::runtime_error("Unknown border mode: " + border);
+      }
+
+    } else if (arg == "--sigmaX") {
+      args.sigmaX = std::stof(argv[++i]);
+    } else if (arg == "--sigmaY") {
+      args.sigmaY = std::stof(argv[++i]);
+    } else if (arg == "--dx") {
+      args.dx = std::stoi(argv[++i]);
+    } else if (arg == "--dy") {
+      args.dy = std::stoi(argv[++i]);
+    } else if (arg == "--scale") {
+      args.scale = std::stod(argv[++i]);
+    } else if (arg == "--delta") {
+      args.delta = std::stod(argv[++i]);
+    } else if (arg == "--threads") {
+      args.num_threads = std::stoi(argv[++i]);
+    } else if (arg == "--benchmark") {
+      args.benchmark = true;
+    } else if (arg == "--csv") {
+      args.csv = argv[++i];
+    } else if (arg == "--help" || arg == "-h") {
+      return std::nullopt;
+    } else {
+      throw std::runtime_error("Invalid argument: " + arg);
+    }
+  }
+
+  // Verify the arguments
+  if (args.input_path.empty() || args.output_path.empty()) {
+    throw std::runtime_error("--input and --output are required");
+  }
+
+  if (args.filter == FilterType::GaussianBlur) {
+    if (!args.sigmaX || !args.kernel_size) {
+      throw std::runtime_error(
+          "--kernel-size and --sigmaX are required "
+          "for blur filter");
+    }
+  }
+
+  if (args.filter == FilterType::Sobel) {
+    if (!args.dx || !args.dy || !args.kernel_size) {
+      throw std::runtime_error(
+          "--kernel-size, --dx and --dy are required "
+          "for sobel filter");
+    }
+  }
+
+  return args;
+}
+
+int main(int argc, char** argv) {
+  // parse params
+  Args args;
+  try {
+    auto parsed = parseArgs(argc, argv);
+
+    if (!parsed) {
+      printUsage(argv[0]);
+      return 0;
+    }
+
+    args = *parsed;
+  } catch (std::exception& e) {
+    std::cerr << "Error: " << e.what() << "\n";
+    printUsage(argv[0]);
+    return 1;
+  }
+
+  printArgs(args);
+
+  unsigned int num_threads = args.num_threads;
+  if (num_threads == 0) {
+    num_threads = std::max(1u, std::thread::hardware_concurrency());
+  } else {
+    num_threads = std::max(num_threads, std::thread::hardware_concurrency());
+  }
+
+  ThreadPool pool(num_threads);
+
+  Image in_img;
+  in_img.load(args.input_path);
+
+  int out_channels = in_img.getChannels();
+  if (args.filter == FilterType::GrayScale) {
+    out_channels = 1;
+  }
+
+  Image out_img(in_img.getWidth(), in_img.getHeight(), out_channels);
+
+  auto runFilter = [&]() {
+    switch (args.filter) {
+    case FilterType::GrayScale:
+      grayscale(out_img, in_img, pool, num_threads);
+      break;
+    case FilterType::GaussianBlur:
+      gaussian_blur(out_img, in_img, pool, num_threads,
+                    args.kernel_size.value(), args.sigmaX.value(),
+                    args.sigmaY.value(), args.border_mode.value());
+      break;
+    case FilterType::Sobel: {
+      // Allocate temp buffer for X axis
+      int width = in_img.getWidth();
+      int height = in_img.getHeight();
+      int channels = in_img.getChannels();
+      size_t total = static_cast<size_t>(width) * height * channels;
+
+      std::vector<double> gx(total), gy(total);
+
+      sobel<double>(gx, in_img, pool, num_threads, /*dx=*/1, /*dy=*/0,
+                    args.kernel_size.value(), args.scale.value(),
+                    args.delta.value(),
+                    args.border_mode.value_or(BorderMode::BORDER_REFLECT));
+      sobel<double>(gy, in_img, pool, num_threads, /*dx=*/0, /*dy=*/1,
+                    args.kernel_size.value(), args.scale.value(),
+                    args.delta.value(),
+                    args.border_mode.value_or(BorderMode::BORDER_REFLECT));
+
+      auto* out_data = out_img.getDataMutable();
+      for (size_t i = 0; i < total; i++) {
+        double mag = std::sqrt(gx[i] * gx[i] + gy[i] * gy[i]);
+        out_data[i] = static_cast<uint8_t>(std::clamp(mag, 0.0, 255.0));
+      }
+    } break;
+    default:
+      throw std::runtime_error("Invalid filter!");
+    }
+  };
+
+  // runfilter or benchmark as per the given mode
+  if (!args.benchmark) {
+    std::cout << "Running filter: " << toString(args.filter) << std::endl;
+    runFilter();
+    std::cout << "Saving image...";
+    out_img.save(args.output_path);
+    std::cout << "Done!" << std::endl;
+    return 0;
+  }
+}

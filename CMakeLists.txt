@@ -9,7 +9,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(BUILD_TESTS "Build the test suite" ON)
 
 set(SOURCES
-    src/main.cpp
     src/image.cpp
     src/engine.cpp
     src/threadpool.cpp
