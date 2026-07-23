@@ -312,30 +312,3 @@ TEST(GaussianBlurTest, MatchesOpenCvGaussianBlurWithRandomParams) {
     }
   }
 }
-
-TEST(GaussianBlurTest, debug) {
-  constexpr int width = 49;
-  constexpr int height = 4;
-  constexpr int channels = 3;
-  constexpr int kernel_size = 9;
-  constexpr float sigmaX = 1.7285f;
-  constexpr float sigmaY = 0.9f;
-  BorderMode mode = BORDER_REFLECT;
-
-  std::vector<uint8_t> image(width * height * channels);
-  for (int row = 0; row < height; ++row) {
-    for (int col = 0; col < width; ++col) {
-      const int index = (row * width + col) * channels;
-      image[index + 0] = static_cast<uint8_t>((row * 23 + col * 17) % 256);
-      image[index + 1] = static_cast<uint8_t>((row * 41 + col * 13) % 256);
-      image[index + 2] = static_cast<uint8_t>((row * 67 + col * 29) % 256);
-    }
-  }
-
-  const std::vector<uint8_t> output = RunFilterWithParams(
-      image, width, height, channels, kernel_size, sigmaX, sigmaY, mode);
-  const std::vector<uint8_t> reference = RunOpenCvBlurWithParams(
-      image, width, height, channels, kernel_size, sigmaX, sigmaY, mode);
-
-  CompareToOpenCv(output, reference);
-}

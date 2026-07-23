@@ -344,30 +344,3 @@ TEST(SobelTest, MatchesOpenCvSobelWithRandomParams) {
     }
   }
 }
-
-TEST(SobelTest, debug) {
-  constexpr int width = 49;
-  constexpr int height = 4;
-  constexpr int channels = 3;
-  constexpr int kernel_size = 9;
-  constexpr double scale = 1.0;
-  constexpr double delta = 0.0;
-  BorderMode mode = BORDER_REFLECT;
-
-  std::vector<uint8_t> image(width * height * channels);
-  for (int row = 0; row < height; ++row) {
-    for (int col = 0; col < width; ++col) {
-      const int index = (row * width + col) * channels;
-      image[index + 0] = static_cast<uint8_t>((row * 23 + col * 17) % 256);
-      image[index + 1] = static_cast<uint8_t>((row * 41 + col * 13) % 256);
-      image[index + 2] = static_cast<uint8_t>((row * 67 + col * 29) % 256);
-    }
-  }
-
-  const std::vector<double> output = RunFilter(
-      image, width, height, channels, 1, 0, kernel_size, scale, delta, mode);
-  const std::vector<float> reference = RunOpenCvSobel(
-      image, width, height, channels, 1, 0, kernel_size, scale, delta, mode);
-
-  CompareToOpenCv(output, reference);
-}
