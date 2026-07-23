@@ -22,6 +22,22 @@ void grayscale(Image& dst, const Image& src, ThreadPool& pool,
   // Standard formula:
   // ----> Grayscale = (0.299 × R) + (0.587 × G) + (0.114 × B)
 
+  auto channels = src.getChannels();
+
+  if (channels < 1 || channels > 4) {
+    throw std::invalid_argument("Unsupported number of channels. Must be 1, 2, 3, or 4.");
+  }
+
+  auto height = src.getHeight();
+  auto width = src.getWidth();
+  auto input_data = src.getData();
+  auto out_data = dst.getDataMutable();
+
+  if (channels == 1) {
+    std::copy(input_data, input_data + width * height, out_data);
+    return;
+  }
+
   // OpenCv uses integer coefficients for the weighted sum:
   // OpenCV uses 15-bit shift precision in C++ CPU fallback mode:
   static const int R2Y = 9798;  // round(0.299 * 32768)
@@ -29,13 +45,6 @@ void grayscale(Image& dst, const Image& src, ThreadPool& pool,
   static const int B2Y = 3735;  // round(0.114 * 32768)
   static const int shift = 15;
   constexpr int half = 1 << (shift - 1);
-
-  auto height = src.getHeight();
-  auto width = src.getWidth();
-  auto channels = src.getChannels();
-  auto input_data = src.getData();
-
-  auto out_data = dst.getDataMutable();
 
   if (num_threads == 0) num_threads = 1;
 
