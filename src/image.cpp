@@ -71,7 +71,7 @@ void Image::clear() {
 }
 
 bool Image::load(const std::string& path) {
-  stbi_image_free(data);
+  clear();
   data = nullptr;
 
   data = stbi_load(path.c_str(), &width, &height, &channels, 0);
