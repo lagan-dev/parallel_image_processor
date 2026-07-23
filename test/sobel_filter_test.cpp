@@ -344,3 +344,21 @@ TEST(SobelTest, MatchesOpenCvSobelWithRandomParams) {
     }
   }
 }
+
+// Issue 6, negative test
+TEST(SobelTest, RejectsZeroGradientVector) {
+  constexpr int width = 3;
+  constexpr int height = 3;
+  constexpr int channels = 3;
+
+  std::vector<uint8_t> image(width * height * channels, 0);
+  Image src(width, height, channels);
+  CopyToImage(src, image);
+
+  std::vector<double> output(width * height * channels);
+  ThreadPool pool(4);
+
+  EXPECT_THROW(
+      sobel<double>(output, src, pool, 4, 0, 0, 3, 1.0, 0.0, BORDER_REFLECT),
+      std::invalid_argument);
+}
