@@ -16,7 +16,6 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 set(SOURCES
-    src/main.cpp
     src/image.cpp
     src/engine.cpp
     src/threadpool.cpp
