@@ -25,7 +25,8 @@ void grayscale(Image& dst, const Image& src, ThreadPool& pool,
   auto channels = src.getChannels();
 
   if (channels < 1 || channels > 4) {
-    throw std::invalid_argument("Unsupported number of channels. Must be 1, 2, 3, or 4.");
+    throw std::invalid_argument(
+        "Unsupported number of channels. Must be 1, 2, 3, or 4.");
   }
 
   auto height = src.getHeight();
@@ -113,6 +114,10 @@ std::vector<double> get_1d_gaussian_kernel(int kernel_size, double sigma) {
     kernel_size = 2 * radius + 1;
   } else {
     radius = kernel_size / 2;
+  }
+
+  if (kernel_size <= 0 || kernel_size % 2 == 0) {
+    throw std::invalid_argument("Kernel size must be a positive odd integer.");
   }
 
   // e ^(- (x / 2σ) ^ 2)
@@ -451,6 +456,10 @@ std::vector<long long> generateDifferentiationVector(int N) {
 SobelKernels generateSobelKernels(int dx, int dy, int kernel_size) {
   if (dx == 0 && dy == 0) {
     throw std::invalid_argument("Both dx and dy can not be equal to 0");
+  }
+
+  if (kernel_size <= 0 || kernel_size % 2 == 0) {
+    throw std::invalid_argument("Kernel size must be a positive odd integer.");
   }
 
   auto S = generateSmoothingVector(kernel_size);

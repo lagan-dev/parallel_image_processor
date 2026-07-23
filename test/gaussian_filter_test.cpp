@@ -312,3 +312,20 @@ TEST(GaussianBlurTest, MatchesOpenCvGaussianBlurWithRandomParams) {
     }
   }
 }
+
+// Issue 6, negative test
+TEST(GaussianBlurTest, RejectsEvenKernelSize) {
+  constexpr int width = 3;
+  constexpr int height = 3;
+  constexpr int channels = 3;
+
+  std::vector<uint8_t> image(width * height * channels, 0);
+  Image src(width, height, channels);
+  CopyToImage(src, image);
+
+  Image dst(width, height, channels);
+  ThreadPool pool(4);
+
+  EXPECT_THROW(gaussian_blur(dst, src, pool, 4, 2, 1.0f, 1.0f, BORDER_CLAMP),
+               std::invalid_argument);
+}
