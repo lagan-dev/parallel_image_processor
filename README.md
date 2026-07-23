@@ -14,6 +14,8 @@ A small C++ project for applying image filters (e.g. Gaussian) to images using p
 - CMake (>= 3.10)
 - A C++17-capable compiler (GCC/Clang)
 - Ninja (optional, recommended for fast builds)
+- OpenCV with the `core` and `imgproc` components installed only when building the test suite
+- GoogleTest is fetched automatically by CMake when `BUILD_TESTS=ON`
 
 ## Build
 
@@ -22,7 +24,14 @@ Run these commands from the repository root:
 ```bash
 mkdir -p build
 cd build
-cmake .. -G Ninja    # or omit -G Ninja to use your default generator
+cmake .. -G Ninja -DBUILD_TESTS=OFF    # engine only, no OpenCV or GoogleTest required
+cmake --build .
+```
+
+To build the test suite as well, omit `-DBUILD_TESTS=OFF` and make sure OpenCV is installed. GoogleTest will be fetched automatically during configuration:
+
+```bash
+cmake .. -G Ninja
 cmake --build .
 ```
 
@@ -46,6 +55,8 @@ From the `build/` directory run:
 ```bash
 ctest -V
 ```
+
+The test binaries require OpenCV to be available in the build environment.
 
 ## Contributing
 
