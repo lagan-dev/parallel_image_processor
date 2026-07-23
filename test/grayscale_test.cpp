@@ -184,3 +184,17 @@ TEST(GrayscaleTest, RoundsRatherThanTruncatesWeightedSum) {
                                "got " << static_cast<int>(output[1])
                             << " (looks truncated, not rounded)";
 }
+
+TEST(GrayscaleTest, SupportsSingleChannelInput) {
+  std::vector<uint8_t> image = {10, 20, 30};
+
+  Image src(3, 1, 1);
+  CopyToImage(src, image);
+
+  Image dst(3, 1, 1);
+  ThreadPool pool(4);
+  grayscale(dst, src, pool, 4);
+
+  const std::vector<uint8_t> output = ReadImageBytes(dst);
+  EXPECT_EQ(output, image);
+}
