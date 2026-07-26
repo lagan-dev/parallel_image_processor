@@ -70,7 +70,7 @@ void grayscale(Image& dst, const Image& src, ThreadPool& pool,
     int64_t total = 1L * width * height;
     int64_t chunk = (total + num_threads - 1) / num_threads;
 
-    for (int t = 0; t < num_threads; t++) {
+    for (unsigned int t = 0; t < num_threads; t++) {
       int64_t start = t * chunk;
       int64_t end = std::min((start + chunk), total);
 
@@ -283,7 +283,7 @@ void convolution1D(double* out_data, IN_T* in_data,
   int64_t chunk = (height + num_threads - 1) / num_threads;
   auto sample_pixel_fn = GetSamplePixelFn<IN_T>(mode);
 
-  for (int t = 0; t < num_threads; t++) {
+  for (unsigned int t = 0; t < num_threads; t++) {
     auto start_h = t * chunk;
     auto end_h = std::min((start_h + chunk), 1L * height);
 
@@ -372,7 +372,7 @@ void gaussian_blur(Image& output, const Image& input, ThreadPool& pool,
 
   // Convert double to uint8_t data
   if (num_threads == 1) {
-    for (int idx = 0; idx < temp_bufferY.size(); idx++) {
+    for (size_t idx = 0; idx < temp_bufferY.size(); idx++) {
       output_data_ptr[idx] = static_cast<uint8_t>(
           std::clamp(std::lround(temp_bufferY[idx]), 0L, 255L));
     }
@@ -381,7 +381,7 @@ void gaussian_blur(Image& output, const Image& input, ThreadPool& pool,
     int64_t chunk = (total + num_threads - 1) / num_threads;
 
     std::vector<std::thread> workers;
-    for (int t = 0; t < num_threads; t++) {
+    for (unsigned int t = 0; t < num_threads; t++) {
       auto start = t * chunk;
       auto end = std::min((start + chunk), total);
 
@@ -519,14 +519,14 @@ void sobel(std::vector<TYPE>& output, const Image& input, ThreadPool& pool,
 
   // Apply scale and delta
   if (num_threads == 1) {
-    for (int idx = 0; idx < output.size(); idx++) {
+    for (size_t idx = 0; idx < output.size(); idx++) {
       output[idx] = std::fma(output[idx], scale, delta);
     }
   } else {
     int64_t total = output.size();
     int64_t chunk = (total + num_threads - 1) / num_threads;
 
-    for (int t = 0; t < num_threads; t++) {
+    for (unsigned int t = 0; t < num_threads; t++) {
       auto start = t * chunk;
       auto end = std::min((start + chunk), total);
 

@@ -55,7 +55,7 @@ std::vector<uint8_t> RunFilter(const std::vector<uint8_t>& input, int width,
 }
 
 std::vector<uint8_t> RunOpenCvBlur(const std::vector<uint8_t>& input, int width,
-                                   int height, int channels, int kernel_size,
+                                   int height, int kernel_size,
                                    float sigmaX, float sigmaY) {
   cv::Mat src(height, width, CV_8UC3, const_cast<uint8_t*>(input.data()));
   cv::Mat src32;
@@ -73,8 +73,7 @@ std::vector<uint8_t> RunOpenCvBlur(const std::vector<uint8_t>& input, int width,
   return output;
 }
 
-void FillRandomImage(std::vector<uint8_t>& image, int width, int height,
-                     int channels, std::mt19937& rng) {
+void FillRandomImage(std::vector<uint8_t>& image, std::mt19937& rng) {
   std::uniform_int_distribution<int> dist(0, 255);
 
   for (uint8_t& value : image) {
@@ -85,7 +84,7 @@ void FillRandomImage(std::vector<uint8_t>& image, int width, int height,
 std::vector<uint8_t> GenerateRandomImage(int width, int height, int channels,
                                          std::mt19937& rng) {
   std::vector<uint8_t> image(width * height * channels);
-  FillRandomImage(image, width, height, channels, rng);
+  FillRandomImage(image, rng);
   return image;
 }
 
@@ -138,7 +137,7 @@ TEST(GaussianBlurTest, MatchesOpenCvGaussianBlur) {
   const std::vector<uint8_t> output =
       RunFilter(image, width, height, channels, 3, 1.0f, 1.2f);
   const std::vector<uint8_t> reference =
-      RunOpenCvBlur(image, width, height, channels, 3, 1.0f, 1.2f);
+      RunOpenCvBlur(image, width, height, 3, 1.0f, 1.2f);
 
   CompareToOpenCv(output, reference);
 }
@@ -161,7 +160,7 @@ TEST(GaussianBlurTest, MatchesOpenCvGaussianBlurWithRandomShapes) {
     const std::vector<uint8_t> output =
         RunFilter(image, width, height, channels, 3, 1.0f, 1.2f);
     const std::vector<uint8_t> reference =
-        RunOpenCvBlur(image, width, height, channels, 3, 1.0f, 1.2f);
+        RunOpenCvBlur(image, width, height, 3, 1.0f, 1.2f);
 
     CompareToOpenCv(output, reference);
   }
@@ -183,9 +182,8 @@ std::vector<uint8_t> RunFilterWithParams(const std::vector<uint8_t>& input,
 
 std::vector<uint8_t> RunOpenCvBlurWithParams(const std::vector<uint8_t>& input,
                                              int width, int height,
-                                             int channels, int kernel_size,
-                                             float sigmaX, float sigmaY,
-                                             BorderMode mode) {
+                                             int kernel_size, float sigmaX,
+                                             float sigmaY, BorderMode mode) {
   cv::Mat src(height, width, CV_8UC3, const_cast<uint8_t*>(input.data()));
 
   cv::Mat src32;
@@ -240,7 +238,7 @@ void ExpectMatchesOpenCvForBorderMode(BorderMode mode) {
   const std::vector<uint8_t> output = RunFilterWithParams(
       image, width, height, channels, kernel_size, sigmaX, sigmaY, mode);
   const std::vector<uint8_t> reference = RunOpenCvBlurWithParams(
-      image, width, height, channels, kernel_size, sigmaX, sigmaY, mode);
+      image, width, height, kernel_size, sigmaX, sigmaY, mode);
 
   CompareToOpenCv(output, reference);
 }
@@ -306,7 +304,7 @@ TEST(GaussianBlurTest, MatchesOpenCvGaussianBlurWithRandomParams) {
       const std::vector<uint8_t> output = RunFilterWithParams(
           image, width, height, channels, kernel_size, sigmaX, sigmaY, mode);
       const std::vector<uint8_t> reference = RunOpenCvBlurWithParams(
-          image, width, height, channels, kernel_size, sigmaX, sigmaY, mode);
+          image, width, height, kernel_size, sigmaX, sigmaY, mode);
 
       CompareToOpenCv(output, reference);
     }
