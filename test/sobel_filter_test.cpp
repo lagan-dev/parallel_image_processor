@@ -76,9 +76,8 @@ cv::Mat RunOpenCvSobel(const cv::Mat& src32, int dx, int dy, int kernel_size,
 }
 
 std::vector<float> RunOpenCvSobel(const std::vector<uint8_t>& input, int width,
-                                  int height, int channels, int dx, int dy,
-                                  int kernel_size, double scale, double delta,
-                                  BorderMode mode) {
+                                  int height, int dx, int dy, int kernel_size,
+                                  double scale, double delta, BorderMode mode) {
   cv::Mat src(height, width, CV_8UC3, const_cast<uint8_t*>(input.data()));
 
   cv::Mat src32;
@@ -92,8 +91,7 @@ std::vector<float> RunOpenCvSobel(const std::vector<uint8_t>& input, int width,
   return output;
 }
 
-void FillRandomImage(std::vector<uint8_t>& image, int width, int height,
-                     int channels, std::mt19937& rng) {
+void FillRandomImage(std::vector<uint8_t>& image, std::mt19937& rng) {
   std::uniform_int_distribution<int> dist(0, 255);
 
   for (uint8_t& value : image) {
@@ -104,7 +102,7 @@ void FillRandomImage(std::vector<uint8_t>& image, int width, int height,
 std::vector<uint8_t> GenerateRandomImage(int width, int height, int channels,
                                          std::mt19937& rng) {
   std::vector<uint8_t> image(width * height * channels);
-  FillRandomImage(image, width, height, channels, rng);
+  FillRandomImage(image, rng);
   return image;
 }
 
@@ -166,7 +164,7 @@ TEST(SobelTest, MatchesOpenCvSobelGradientX) {
       RunFilter(image, width, height, channels, 1, 0, kernel_size, scale, delta,
                 BORDER_REFLECT);
   const std::vector<float> reference =
-      RunOpenCvSobel(image, width, height, channels, 1, 0, kernel_size, scale,
+      RunOpenCvSobel(image, width, height, 1, 0, kernel_size, scale,
                      delta, BORDER_REFLECT);
 
   CompareToOpenCv(output, reference);
@@ -200,7 +198,7 @@ TEST(SobelTest, MatchesOpenCvSobelGradientY) {
       RunFilter(image, width, height, channels, 0, 1, kernel_size, scale, delta,
                 BORDER_REFLECT);
   const std::vector<float> reference =
-      RunOpenCvSobel(image, width, height, channels, 0, 1, kernel_size, scale,
+      RunOpenCvSobel(image, width, height, 0, 1, kernel_size, scale,
                      delta, BORDER_REFLECT);
 
   CompareToOpenCv(output, reference);
@@ -230,7 +228,7 @@ TEST(SobelTest, MatchesOpenCvSobelWithRandomShapes) {
           RunFilter(image, width, height, channels, dx, dy, kernel_size, 1.0,
                     0.0, BORDER_REFLECT);
       const std::vector<float> reference =
-          RunOpenCvSobel(image, width, height, channels, dx, dy, kernel_size,
+          RunOpenCvSobel(image, width, height, dx, dy, kernel_size,
                          1.0, 0.0, BORDER_REFLECT);
 
       CompareToOpenCv(output, reference);
@@ -266,7 +264,7 @@ void ExpectMatchesOpenCvForBorderMode(BorderMode mode) {
         RunFilter(image, width, height, channels, dx, dy, kernel_size, scale,
                   delta, mode);
     const std::vector<float> reference =
-        RunOpenCvSobel(image, width, height, channels, dx, dy, kernel_size,
+        RunOpenCvSobel(image, width, height, dx, dy, kernel_size,
                        scale, delta, mode);
 
     CompareToOpenCv(output, reference);
@@ -337,7 +335,7 @@ TEST(SobelTest, MatchesOpenCvSobelWithRandomParams) {
           RunFilter(image, width, height, channels, dx, dy, kernel_size, scale,
                     delta, mode);
       const std::vector<float> reference =
-          RunOpenCvSobel(image, width, height, channels, dx, dy, kernel_size,
+          RunOpenCvSobel(image, width, height, dx, dy, kernel_size,
                          scale, delta, mode);
 
       CompareToOpenCv(output, reference);

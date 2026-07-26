@@ -16,10 +16,12 @@ set(SOURCES
 
 add_library(filters_lib src/filters.cpp src/image.cpp src/threadpool.cpp)
 target_include_directories(filters_lib PUBLIC include)
+target_compile_options(filters_lib PRIVATE -Wall -Werror -Wpedantic -O3)
 
 add_executable(engine ${SOURCES})
 target_include_directories(engine PRIVATE include)
 target_link_libraries(engine PRIVATE filters_lib)
+target_compile_options(engine PRIVATE -Wall -Werror -Wpedantic -O3)
 
 if(BUILD_TESTS)
     include(FetchContent)
