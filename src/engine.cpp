@@ -1,7 +1,10 @@
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <exception>
+#include <fstream>
 #include <iostream>
+#include <numeric>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -30,6 +33,7 @@ struct Args {
   int num_threads = 0;
 
   bool benchmark = false;
+  int runs = 0;
   std::string csv;
 };
 
@@ -65,6 +69,7 @@ void printUsage(const char* program) {
             << "Other options:\n"
             << "  --threads <n>           Number of worker threads\n"
             << "  --benchmark             Enable benchmarking\n"
+            << "  --runs <n>              Number of timed iterations in benchmark mode (default: 10)\n"
             << "  --csv <file>            Save benchmark results to CSV\n"
             << "  -h, --help              Show this help message\n\n"
 
@@ -84,31 +89,31 @@ void printUsage(const char* program) {
 // ============== HELPER FUNCTIONS FOR PRINTING =================
 static const char* toString(FilterType filter) {
   switch (filter) {
-  case FilterType::GrayScale:
-    return "grayscale";
-  case FilterType::GaussianBlur:
-    return "blur";
-  case FilterType::Sobel:
-    return "sobel";
-  default:
-    return "unknown";
+    case FilterType::GrayScale:
+      return "grayscale";
+    case FilterType::GaussianBlur:
+      return "blur";
+    case FilterType::Sobel:
+      return "sobel";
+    default:
+      return "unknown";
   }
 }
 
 static const char* toString(BorderMode mode) {
   switch (mode) {
-  case BorderMode::BORDER_CLAMP:
-    return "clamp";
-  case BorderMode::BORDER_REFLECT:
-    return "reflect";
-  case BorderMode::BORDER_MIRROR:
-    return "mirror";
-  case BorderMode::BORDER_WRAP:
-    return "wrap";
-  case BorderMode::BORDER_CONSTANT:
-    return "constant";
-  default:
-    return "unknown";
+    case BorderMode::BORDER_CLAMP:
+      return "clamp";
+    case BorderMode::BORDER_REFLECT:
+      return "reflect";
+    case BorderMode::BORDER_MIRROR:
+      return "mirror";
+    case BorderMode::BORDER_WRAP:
+      return "wrap";
+    case BorderMode::BORDER_CONSTANT:
+      return "constant";
+    default:
+      return "unknown";
   }
 }
 
@@ -163,6 +168,7 @@ void printArgs(const Args& args) {
 
   std::cout << "Threads      : " << args.num_threads << '\n';
   std::cout << "Benchmark    : " << (args.benchmark ? "true" : "false") << '\n';
+  std::cout << "Runs         : " << args.runs << '\n';
   std::cout << "CSV File     : " << (args.csv.empty() ? "<not set>" : args.csv)
             << '\n';
   std::cout << "----------------------------------------\n";
@@ -229,6 +235,8 @@ std::optional<Args> parseArgs(int argc, char** argv) {
       args.benchmark = true;
     } else if (arg == "--csv") {
       args.csv = argv[++i];
+    } else if (arg == "--runs") {
+      args.runs = std::stoi(argv[++i]);
     } else if (arg == "--help" || arg == "-h") {
       return std::nullopt;
     } else {
@@ -283,8 +291,6 @@ int main(int argc, char** argv) {
   unsigned int num_threads = args.num_threads;
   if (num_threads == 0) {
     num_threads = std::max(1u, std::thread::hardware_concurrency());
-  } else {
-    num_threads = std::max(num_threads, std::thread::hardware_concurrency());
   }
 
   ThreadPool pool(num_threads);
@@ -301,40 +307,40 @@ int main(int argc, char** argv) {
 
   auto runFilter = [&]() {
     switch (args.filter) {
-    case FilterType::GrayScale:
-      grayscale(out_img, in_img, pool, num_threads);
-      break;
-    case FilterType::GaussianBlur:
-      gaussian_blur(out_img, in_img, pool, num_threads,
-                    args.kernel_size.value(), args.sigmaX.value(),
-                    args.sigmaY.value(), args.border_mode.value());
-      break;
-    case FilterType::Sobel: {
-      // Allocate temp buffer for X axis
-      int width = in_img.getWidth();
-      int height = in_img.getHeight();
-      int channels = in_img.getChannels();
-      size_t total = static_cast<size_t>(width) * height * channels;
+      case FilterType::GrayScale:
+        grayscale(out_img, in_img, pool, num_threads);
+        break;
+      case FilterType::GaussianBlur:
+        gaussian_blur(out_img, in_img, pool, num_threads,
+                      args.kernel_size.value(), args.sigmaX.value(),
+                      args.sigmaY.value(), args.border_mode.value());
+        break;
+      case FilterType::Sobel: {
+        // Allocate temp buffer for X axis
+        int width = in_img.getWidth();
+        int height = in_img.getHeight();
+        int channels = in_img.getChannels();
+        size_t total = static_cast<size_t>(width) * height * channels;
 
-      std::vector<double> gx(total), gy(total);
+        std::vector<double> gx(total), gy(total);
 
-      sobel<double>(gx, in_img, pool, num_threads, /*dx=*/1, /*dy=*/0,
-                    args.kernel_size.value(), args.scale.value(),
-                    args.delta.value(),
-                    args.border_mode.value_or(BorderMode::BORDER_REFLECT));
-      sobel<double>(gy, in_img, pool, num_threads, /*dx=*/0, /*dy=*/1,
-                    args.kernel_size.value(), args.scale.value(),
-                    args.delta.value(),
-                    args.border_mode.value_or(BorderMode::BORDER_REFLECT));
+        sobel<double>(gx, in_img, pool, num_threads, /*dx=*/1, /*dy=*/0,
+                      args.kernel_size.value(), args.scale.value(),
+                      args.delta.value(),
+                      args.border_mode.value_or(BorderMode::BORDER_REFLECT));
+        sobel<double>(gy, in_img, pool, num_threads, /*dx=*/0, /*dy=*/1,
+                      args.kernel_size.value(), args.scale.value(),
+                      args.delta.value(),
+                      args.border_mode.value_or(BorderMode::BORDER_REFLECT));
 
-      auto* out_data = out_img.getDataMutable();
-      for (size_t i = 0; i < total; i++) {
-        double mag = std::sqrt(gx[i] * gx[i] + gy[i] * gy[i]);
-        out_data[i] = static_cast<uint8_t>(std::clamp(mag, 0.0, 255.0));
-      }
-    } break;
-    default:
-      throw std::runtime_error("Invalid filter!");
+        auto* out_data = out_img.getDataMutable();
+        for (size_t i = 0; i < total; i++) {
+          double mag = std::sqrt(gx[i] * gx[i] + gy[i] * gy[i]);
+          out_data[i] = static_cast<uint8_t>(std::clamp(mag, 0.0, 255.0));
+        }
+      } break;
+      default:
+        throw std::runtime_error("Invalid filter!");
     }
   };
 
@@ -347,4 +353,63 @@ int main(int argc, char** argv) {
     std::cout << "Done!" << std::endl;
     return 0;
   }
+
+  // benchmark mode
+  std::cout << "Benchmarking filter: " << toString(args.filter) << std::endl;
+  int kRuns = (args.runs == 0)? 10 : args.runs;
+
+  std::vector<double> times_ms;
+  times_ms.reserve(kRuns);
+
+  for (int i = 0; i < kRuns; i++) {
+    auto start = std::chrono::steady_clock::now();
+    runFilter();
+    auto end = std::chrono::steady_clock::now();
+    std::chrono::duration<double, std::milli> elapsed = end - start;
+
+    times_ms.push_back(elapsed.count());
+  }
+
+  // sort for finding min. median, max
+  std::vector<double> sorted_times = times_ms;
+  std::sort(sorted_times.begin(), sorted_times.end());
+
+  auto min_ms = sorted_times.front();
+  auto max_ms = sorted_times.back();
+
+  auto sum_ms = std::accumulate(sorted_times.begin(), sorted_times.end(), 0.0);
+  auto mean_ms = sum_ms / sorted_times.size();
+
+  double median_ms = 0.0;
+  if (kRuns % 2 == 0) {
+    auto idx = kRuns / 2;
+    median_ms = (sorted_times[idx - 1] + sorted_times[idx]) / 2.0;
+  } else {
+    median_ms = sorted_times[kRuns / 2];
+  }
+
+  std::cout << "----------------------------------------\n";
+  std::cout << "Min    : " << min_ms << " ms\n";
+  std::cout << "Median : " << median_ms << " ms\n";
+  std::cout << "Mean   : " << mean_ms << " ms\n";
+  std::cout << "Max    : " << max_ms << " ms\n";
+  std::cout << "----------------------------------------\n";
+
+  std::string filepath =
+      (!args.csv.empty()) ? args.csv : "benchmark_results.csv";
+  std::ofstream results(filepath);
+
+  if (!results) {
+    std::cerr << "Warning: could not open " << filepath << " for writing\n";
+  } else {
+    results << "run,filter,threads,time_ms\n";
+
+    for (int i = 0; i < kRuns; i++) {
+      results << i + 1 << "," << toString(args.filter) << ","
+              << num_threads << "," << times_ms[i] << "\n";
+    }
+  }
+
+  // Save output image
+  out_img.save(args.output_path);
 }
