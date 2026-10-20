@@ -380,7 +380,6 @@ void gaussian_blur(Image& output, const Image& input, ThreadPool& pool,
     int64_t total = temp_bufferY.size();
     int64_t chunk = (total + num_threads - 1) / num_threads;
 
-    std::vector<std::thread> workers;
     for (unsigned int t = 0; t < num_threads; t++) {
       auto start = t * chunk;
       auto end = std::min((start + chunk), total);
